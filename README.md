@@ -1,34 +1,34 @@
 # Solana Facility Game MVP
 
-Solanaブロックチェーン上で動作する施設経営ゲームのMVP（Minimum Viable Product）です。Anchorフレームワークを使用して実装されています。
+An MVP (Minimum Viable Product) of a facility management game running on the Solana blockchain. Implemented using the Anchor framework.
 
-## 主な機能
+## Main Features
 
-### Phase 1: MVP機能
-1. **施設購入システム** - 各ユーザー1施設まで、初期マシン自動配置
-2. **Grow Power & 遅延計算** - 時間経過による報酬蓄積システム
-3. **報酬請求（Claim）** - SPLトークンとしての報酬受け取り
-4. **半減期システム** - 定期的な報酬レート減少メカニズム
-5. **PDA設計** - 将来拡張に対応した拡張可能なアカウント構造
+### Phase 1: MVP Features
+1. **Facility Purchase System** - One facility per user, automatic initial machine placement
+2. **Grow Power & Lazy Calculation** - Reward accumulation system based on time elapsed
+3. **Claim Rewards** - Receive rewards as SPL tokens
+4. **Halving System** - Periodic reward rate reduction mechanism
+5. **PDA Design** - Extensible account structure for future expansion
 
-## アーキテクチャ
+## Architecture
 
-### アカウント構造
-- **Config**: グローバル設定（基本レート、半減期設定）
-- **UserState**: ユーザー状態（PDA: `["user", user_pubkey]`）
-- **Facility**: 施設情報（PDA: `["facility", user_pubkey]`）
-- **RewardMint**: 報酬トークンMint（PDA: `["reward_mint"]`）
+### Account Structure
+- **Config**: Global settings (base rate, halving settings)
+- **UserState**: User state (PDA: `["user", user_pubkey]`)
+- **Facility**: Facility information (PDA: `["facility", user_pubkey]`)
+- **RewardMint**: Reward token mint (PDA: `["reward_mint"]`)
 
-### 命令（Instructions）
-1. `initialize_config` - システム設定初期化
-2. `create_reward_mint` - 報酬トークンMint作成
-3. `init_user` - ユーザーアカウント初期化
-4. `buy_facility` - 施設購入 + 初期マシン配置
-5. `claim_reward` - 報酬請求（時間計算 + トークンMint）
+### Instructions
+1. `initialize_config` - Initialize system settings
+2. `create_reward_mint` - Create reward token mint
+3. `init_user` - Initialize user account
+4. `buy_facility` - Purchase facility + initial machine placement
+5. `claim_reward` - Claim rewards (time calculation + token mint)
 
-## セットアップ手順
+## Setup Instructions
 
-### 1. 必要なツールのインストール
+### 1. Install Required Tools
 
 ```bash
 # Rust
@@ -47,95 +47,95 @@ avm use latest
 npm install -g yarn
 ```
 
-### 2. プロジェクトの初期化
+### 2. Initialize Project
 
 ```bash
-# 新しいAnchorプロジェクトを作成
+# Create a new Anchor project
 anchor init facility-game --no-git
 cd facility-game
 
-# 提供されたファイルを対応する場所に配置
+# Place the provided files in their corresponding locations
 ```
 
-### 3. ファイル構成
+### 3. File Structure
 
 ```
 facility-game/
 ├── programs/facility-game/src/
-│   ├── lib.rs              # メインプログラム
-│   ├── state.rs            # アカウント構造体
+│   ├── lib.rs              # Main program
+│   ├── state.rs            # Account structures
 │   ├── instructions/
-│   │   └── mod.rs          # 命令コンテキスト
-│   └── error.rs            # エラー定義
+│   │   └── mod.rs          # Instruction contexts
+│   └── error.rs            # Error definitions
 ├── tests/
-│   └── facility-game.ts    # テストファイル
-├── Anchor.toml             # Anchor設定
-├── Cargo.toml              # Rust依存関係
-├── package.json            # Node.js設定
-└── tsconfig.json           # TypeScript設定
+│   └── facility-game.ts    # Test file
+├── Anchor.toml             # Anchor configuration
+├── Cargo.toml              # Rust dependencies
+├── package.json            # Node.js configuration
+└── tsconfig.json           # TypeScript configuration
 ```
 
-### 4. ビルドとテスト
+### 4. Build and Test
 
 ```bash
-# 依存関係インストール
+# Install dependencies
 yarn install
 
-# プログラムビルド
+# Build program
 anchor build
 
-# ローカルバリデータ起動（別ターミナル）
+# Start local validator (in separate terminal)
 solana-test-validator
 
-# テスト実行
+# Run tests
 anchor test --skip-local-validator
 ```
 
-### 5. デプロイ
+### 5. Deploy
 
 ```bash
-# Devnetに設定変更
+# Switch to Devnet
 solana config set --url devnet
 
-# エアドロップ（Devnet）
+# Airdrop (Devnet)
 solana airdrop 2
 
-# Devnetにデプロイ
+# Deploy to Devnet
 anchor deploy --provider.cluster devnet
 ```
 
-## 使用例
+## Usage Examples
 
-### 1. システム初期化（管理者）
+### 1. System Initialization (Admin)
 
 ```bash
-# Config初期化（基本レート: 10, 半減期: 1年）
+# Initialize Config (base rate: 10, halving period: 1 year)
 anchor run initialize-config
 ```
 
-### 2. ユーザーの利用フロー
+### 2. User Flow
 
 ```typescript
-// 1. ユーザー初期化
+// 1. Initialize user
 await program.methods.initUser().accounts({...}).rpc();
 
-// 2. 施設購入
+// 2. Purchase facility
 await program.methods.buyFacility().accounts({...}).rpc();
 
-// 3. 時間経過後、報酬請求
+// 3. After time elapsed, claim rewards
 await program.methods.claimReward().accounts({...}).rpc();
 ```
 
-## 技術仕様
+## Technical Specifications
 
-### 報酬計算式
+### Reward Calculation Formula
 ```
-報酬 = (経過時間[秒] × Grow Power × base_rate) / 1000
+Reward = (Elapsed Time[seconds] × Grow Power × base_rate) / 1000
 ```
 
-### 半減期
-- 設定間隔ごとに `base_rate` が半減
-- デフォルト: 1年間隔
+### Halving
+- `base_rate` halves at each configured interval
+- Default: 1 year interval
 
 ### PDA Seeds
 - Config: `["config"]`
@@ -144,40 +144,40 @@ await program.methods.claimReward().accounts({...}).rpc();
 - RewardMint: `["reward_mint"]`
 - MintAuthority: `["mint_authority"]`
 
-## 将来の拡張計画
+## Future Expansion Plans
 
-### Phase 2予定機能
-- 複数マシンタイプ
-- マシンアップグレードシステム
-- 紹介報酬システム
-- 複数施設所有
+### Phase 2 Planned Features
+- Multiple machine types
+- Machine upgrade system
+- Referral reward system
+- Multiple facility ownership
 
-### 拡張可能設計
-- 各アカウントに64バイトの `reserve` フィールド
-- PDA構造による安全なアカウント管理
-- モジュラー命令設計
+### Extensible Design
+- 64-byte `reserve` field in each account
+- Secure account management through PDA structure
+- Modular instruction design
 
-## トラブルシューティング
+## Troubleshooting
 
-### よくある問題
+### Common Issues
 
-1. **Build Error**: Anchorのバージョン確認
-2. **Test Failure**: Solana Test Validatorが起動しているか確認
-3. **Deploy Error**: 十分なSOL残高があるか確認
+1. **Build Error**: Check Anchor version
+2. **Test Failure**: Ensure Solana Test Validator is running
+3. **Deploy Error**: Check sufficient SOL balance
 
-### デバッグ方法
+### Debugging Methods
 
 ```bash
-# ログ確認
+# Check logs
 solana logs
 
-# アカウント状態確認
+# Check account state
 solana account <PDA_ADDRESS>
 
-# プログラムログ
+# Program logs
 anchor test --skip-deploy -- --grep "test_name"
 ```
 
-## ライセンス
+## License
 
 MIT License# test-mining-sol

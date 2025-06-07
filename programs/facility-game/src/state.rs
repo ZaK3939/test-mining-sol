@@ -1,45 +1,45 @@
 use anchor_lang::prelude::*;
 
-/// グローバル設定アカウント
+/// Global configuration account
 #[account]
 pub struct Config {
-    /// 基本報酬レート
+    /// Base reward rate
     pub base_rate: u64,
-    /// 半減期間隔（秒）
+    /// Halving interval (seconds)
     pub halving_interval: i64,
-    /// 次回半減期の時刻
+    /// Next halving timestamp
     pub next_halving_time: i64,
-    /// 管理者アドレス
+    /// Admin address
     pub admin: Pubkey,
-    /// 将来の拡張用
+    /// Reserved for future expansion
     pub reserve: [u8; 64],
 }
 
-/// ユーザー状態アカウント
+/// User state account
 #[account]
 pub struct UserState {
-    /// ユーザーの公開鍵
+    /// User's public key
     pub owner: Pubkey,
-    /// 総Grow Power
+    /// Total Grow Power
     pub total_grow_power: u64,
-    /// 最後の収穫時刻
+    /// Last harvest timestamp
     pub last_harvest_time: i64,
-    /// 施設を持っているかどうか
+    /// Whether the user has a facility
     pub has_facility: bool,
-    /// 将来の拡張用（紹介機能など）
+    /// Reserved for future expansion (referral system, etc.)
     pub reserve: [u8; 64],
 }
 
-/// 施設アカウント
+/// Facility account
 #[account]
 pub struct Facility {
-    /// 施設の所有者
+    /// Facility owner
     pub owner: Pubkey,
-    /// マシン数
+    /// Machine count
     pub machine_count: u32,
-    /// 総Grow Power
+    /// Total Grow Power
     pub total_grow_power: u64,
-    /// 将来の拡張用（複数マシンタイプなど）
+    /// Reserved for future expansion (multiple machine types, etc.)
     pub reserve: [u8; 64],
 }
 

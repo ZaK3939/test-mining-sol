@@ -180,7 +180,7 @@ describe('facility-game', () => {
 
       expect.fail('Should have thrown an error');
     } catch (error: any) {
-      // エラーの詳細を出力してデバッグ
+      // Debug error details
       console.log('=== ERROR DEBUG ===');
       console.log('Error toString():', error.toString());
       console.log('Error message:', error.message);
@@ -189,7 +189,7 @@ describe('facility-game', () => {
       console.log('Full error object:', JSON.stringify(error, null, 2));
       console.log('===================');
 
-      // とりあえずエラーが発生したことを確認
+      // Verify that an error occurred
       expect(error).to.exist;
     }
   });

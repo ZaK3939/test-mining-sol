@@ -14,7 +14,7 @@ use error::*;
 pub mod facility_game {
     use super::*;
 
-    /// グローバル設定を初期化
+    /// Initialize global configuration
     pub fn initialize_config(
         ctx: Context<InitializeConfig>,
         base_rate: u64,
@@ -30,13 +30,13 @@ pub mod facility_game {
         Ok(())
     }
 
-    /// 報酬トークンのMintアカウントを作成
+    /// Create reward token mint account
     pub fn create_reward_mint(ctx: Context<CreateRewardMint>) -> Result<()> {
         msg!("Reward mint created with authority: {}", ctx.accounts.mint_authority.key());
         Ok(())
     }
 
-    /// ユーザーアカウントを初期化
+    /// Initialize user account
     pub fn init_user(ctx: Context<InitUser>) -> Result<()> {
         let user_state = &mut ctx.accounts.user_state;
         user_state.owner = ctx.accounts.user.key();
@@ -49,25 +49,25 @@ pub mod facility_game {
         Ok(())
     }
 
-    /// 施設を購入し、初期マシンを配置
+    /// Purchase facility and place initial machine
     pub fn buy_facility(ctx: Context<BuyFacility>) -> Result<()> {
         let user_state = &mut ctx.accounts.user_state;
         
-        // 既に施設を持っているかチェック
+        // Check if already has facility
         require!(!user_state.has_facility, GameError::AlreadyHasFacility);
         
         let facility = &mut ctx.accounts.facility;
-        // 施設を初期化
+        // Initialize facility
         if facility.owner != Pubkey::default() {
         return Err(GameError::AlreadyHasFacility.into());
         }
 
         facility.owner = ctx.accounts.user.key();
-        facility.machine_count = 1; // 初期マシン1台
-        facility.total_grow_power = 100; // 初期Grow Power
+        facility.machine_count = 1; // Initial machine count: 1
+        facility.total_grow_power = 100; // Initial Grow Power
         facility.reserve = [0; 64];
 
-        // ユーザー状態を更新
+        // Update user state
         user_state.has_facility = true;
         user_state.total_grow_power = facility.total_grow_power;
         user_state.last_harvest_time = Clock::get()?.unix_timestamp;
@@ -77,41 +77,41 @@ pub mod facility_game {
         Ok(())
     }
 
-    /// 報酬を請求
+    /// Claim rewards
     pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
         let user_state = &mut ctx.accounts.user_state;
         let config = &mut ctx.accounts.config;
         
-        // 施設を持っているかチェック
+        // Check if has facility
         require!(user_state.has_facility, GameError::NoFacility);
 
         let current_time = Clock::get()?.unix_timestamp;
         
-        // 半減期のチェックと更新
+        // Check and update halving
         while current_time >= config.next_halving_time {
             config.base_rate = config.base_rate / 2;
             config.next_halving_time += config.halving_interval;
             msg!("Halving occurred! New base rate: {}", config.base_rate);
         }
 
-        // 報酬計算（経過時間 × Grow Power × base_rate）
+        // Calculate reward (elapsed time × Grow Power × base_rate)
         let time_elapsed = current_time - user_state.last_harvest_time;
         let reward_amount = (time_elapsed as u64)
             .checked_mul(user_state.total_grow_power)
             .and_then(|result| result.checked_mul(config.base_rate))
-            .and_then(|result| result.checked_div(1000)) // 1000で割ってレートを調整
+            .and_then(|result| result.checked_div(1000)) // Divide by 1000 to adjust rate
             .ok_or(GameError::CalculationOverflow)?;
 
         require!(reward_amount > 0, GameError::NoRewardToClaim);
 
-        // トークンをミント（修正版）
+        // Mint tokens (fixed version)
         let cpi_accounts = MintTo {
             mint: ctx.accounts.reward_mint.to_account_info(),
             to: ctx.accounts.user_token_account.to_account_info(),
             authority: ctx.accounts.mint_authority.to_account_info(),
         };
 
-        // 修正：正しいseedの構造
+        // Fix: correct seed structure
         let authority_bump = ctx.bumps.mint_authority;
         let seeds = &[
             b"mint_authority".as_ref(),
@@ -124,7 +124,7 @@ pub mod facility_game {
         
         token::mint_to(cpi_ctx, reward_amount)?;
 
-        // 最終収穫時刻を更新
+        // Update last harvest time
         user_state.last_harvest_time = current_time;
 
         msg!("Reward claimed: {} tokens for user: {}", 

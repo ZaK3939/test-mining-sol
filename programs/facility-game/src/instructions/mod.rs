@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::state::*;
 
-/// グローバル設定初期化のコンテキスト
+/// Context for initializing global configuration
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
     #[account(
@@ -20,7 +20,7 @@ pub struct InitializeConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// 報酬トークンMint作成のコンテキスト
+/// Context for creating reward token mint
 #[derive(Accounts)]
 pub struct CreateRewardMint<'info> {
     #[account(
@@ -33,7 +33,7 @@ pub struct CreateRewardMint<'info> {
     )]
     pub reward_mint: Account<'info, Mint>,
     
-    /// @dev PDAでmint authorityを設定
+    /// @dev Set mint authority as PDA
     #[account(
         seeds = [b"mint_authority"],
         bump
@@ -49,7 +49,7 @@ pub struct CreateRewardMint<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-/// ユーザー初期化のコンテキスト
+/// Context for user initialization
 #[derive(Accounts)]
 pub struct InitUser<'info> {
     #[account(
@@ -67,7 +67,7 @@ pub struct InitUser<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// 施設購入のコンテキスト
+/// Context for facility purchase
 #[derive(Accounts)]
 pub struct BuyFacility<'info> {
     #[account(
@@ -92,7 +92,7 @@ pub struct BuyFacility<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// 報酬請求のコンテキスト
+/// Context for claiming rewards
 #[derive(Accounts)]
 pub struct ClaimReward<'info> {
     #[account(
