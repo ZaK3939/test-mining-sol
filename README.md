@@ -5,6 +5,7 @@ An MVP (Minimum Viable Product) of a facility management game running on the Sol
 ## Main Features
 
 ### Phase 1: MVP Features
+
 1. **Facility Purchase System** - One facility per user, automatic initial machine placement
 2. **Grow Power & Lazy Calculation** - Reward accumulation system based on time elapsed
 3. **Claim Rewards** - Receive rewards as SPL tokens
@@ -14,12 +15,14 @@ An MVP (Minimum Viable Product) of a facility management game running on the Sol
 ## Architecture
 
 ### Account Structure
+
 - **Config**: Global settings (base rate, halving settings)
 - **UserState**: User state (PDA: `["user", user_pubkey]`)
 - **Facility**: Facility information (PDA: `["facility", user_pubkey]`)
 - **RewardMint**: Reward token mint (PDA: `["reward_mint"]`)
 
 ### Instructions
+
 1. `initialize_config` - Initialize system settings
 2. `create_reward_mint` - Create reward token mint
 3. `init_user` - Initialize user account
@@ -91,7 +94,17 @@ solana-test-validator
 anchor test --skip-local-validator
 ```
 
-### 5. Deploy
+### 5. Configure Environment Variables (Optional)
+
+```bash
+# Copy example environment file
+cp .env.example .env.local
+
+# Edit .env.local and add your API keys
+# HELIUS_API_KEY_DEVNET=your_actual_api_key_here
+```
+
+### 6. Deploy
 
 ```bash
 # Switch to Devnet
@@ -102,6 +115,9 @@ solana airdrop 2
 
 # Deploy to Devnet
 anchor deploy --provider.cluster devnet
+
+# Or with custom RPC (using environment variable)
+HELIUS_API_KEY_DEVNET=your_api_key anchor deploy --provider.cluster devnet
 ```
 
 ## Usage Examples
@@ -129,15 +145,18 @@ await program.methods.claimReward().accounts({...}).rpc();
 ## Technical Specifications
 
 ### Reward Calculation Formula
+
 ```
 Reward = (Elapsed Time[seconds] × Grow Power × base_rate) / 1000
 ```
 
 ### Halving
+
 - `base_rate` halves at each configured interval
 - Default: 1 year interval
 
 ### PDA Seeds
+
 - Config: `["config"]`
 - UserState: `["user", user_pubkey]`
 - Facility: `["facility", user_pubkey]`
@@ -147,12 +166,14 @@ Reward = (Elapsed Time[seconds] × Grow Power × base_rate) / 1000
 ## Future Expansion Plans
 
 ### Phase 2 Planned Features
+
 - Multiple machine types
 - Machine upgrade system
 - Referral reward system
 - Multiple facility ownership
 
 ### Extensible Design
+
 - 64-byte `reserve` field in each account
 - Secure account management through PDA structure
 - Modular instruction design
@@ -177,6 +198,38 @@ solana account <PDA_ADDRESS>
 # Program logs
 anchor test --skip-deploy -- --grep "test_name"
 ```
+
+## Security Guidelines
+
+### ⚠️ 重要なセキュリティ注意事項
+
+1. **秘密鍵ファイルの保護**
+
+   - `deploy-keypair.json` や `*.json` キーペアファイルは絶対に公開しない
+   - `.gitignore` に含まれていることを確認
+   - Github 等のパブリックリポジトリにコミットしない
+
+2. **API キーの管理**
+
+   - Helius 等の API キーは環境変数を使用
+   - `.env.local` ファイルは `.gitignore` に含める
+   - 本番環境では適切なシークレット管理サービスを使用
+
+3. **ウォレット管理**
+   - 本番用ウォレットとテスト用ウォレットを分離
+   - Devnet でのテストには専用ウォレットを使用
+   - Mainnet デプロイ前に十分なテストを実施
+
+### セキュリティチェックリスト
+
+- [ ] `.gitignore` に秘密鍵ファイルが含まれている
+- [ ] API キーが環境変数で管理されている
+- [ ] 本番用とテスト用のウォレットが分離されている
+- [ ] パブリックリポジトリに機密情報が含まれていない
+
+## memo
+
+https://squads.xyz/squads-multisig
 
 ## License
 

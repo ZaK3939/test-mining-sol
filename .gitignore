@@ -5,3 +5,11 @@ target
 node_modules
 test-ledger
 .yarn
+.env.local
+.clineignore
+
+# 秘密鍵ファイル（絶対に公開しない）
+deploy-keypair.json
+*.json
+!package.json
+!tsconfig.json

@@ -1,0 +1,42 @@
+{
+  "name": "facility-game-frontend",
+  "version": "1.0.0",
+  "description": "Solana Facility Game Frontend Demo",
+  "type": "module",
+  "scripts": {
+    "dev": "bunx vite",
+    "build": "bun run type-check && bunx vite build",
+    "preview": "bunx vite preview",
+    "type-check": "bunx tsc --noEmit",
+    "install": "bun install",
+    "test": "bunx vitest",
+    "test:ui": "bunx vitest --ui",
+    "test:run": "bunx vitest run",
+    "format": "bunx prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
+    "format:check": "bunx prettier --check \"src/**/*.{ts,tsx,js,jsx,json}\"",
+    "lint": "bunx eslint \"src/**/*.{ts,tsx,js,jsx}\"",
+    "lint:fix": "bunx eslint \"src/**/*.{ts,tsx,js,jsx}\" --fix",
+    "code-check": "bun run type-check && bun run lint && bun run format:check"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
+    "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
+    "@solana/spl-token": "^0.3.11",
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/wallet-adapter-phantom": "^0.9.24",
+    "@solana/web3.js": "^1.87.6",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0",
+    "@vitest/ui": "^1.0.0",
+    "jsdom": "^24.0.0",
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0"
+  }
+}

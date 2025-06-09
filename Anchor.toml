@@ -1,25 +1,85 @@
+# Anchor.toml - Anchorプロジェクトの設定ファイル
+# このファイルはAnchorフレームワークの動作を制御する重要な設定を含みます
+
+# ===== ツールチェーン設定 =====
 [toolchain]
+# 使用するAnchorのバージョンを指定
+# プロジェクト全体で一貫したバージョンを使用することが重要
 anchor_version = "0.31.1"
 
+# ===== 機能フラグ =====
 [features]
+# seeds: true にすると、PDAのseedを自動生成（通常はfalse推奨）
+seeds = false
+
+# resolution: true にすると、アカウント解決の最適化を有効化
+# 複数のアカウントが同じPDAを参照する場合の重複を解決
 resolution = true
+
+# skip-lint: true にすると、ビルド時のlintチェックをスキップ
+# 開発中は false にして、コードの品質を保つことを推奨
 skip-lint = false
 
+# ===== プログラムID設定 =====
+# 各ネットワークでのプログラムIDを指定
+# anchor build 実行時に target/deploy/<program>-keypair.json から自動生成される
+# 同じIDを使用することで、全ネットワークで一貫したアドレスを維持
+
+# ローカルネット用（開発環境）
 [programs.localnet]
 facility_game = "EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89"
 
+# Devnet用（テストネット）
 [programs.devnet]
 facility_game = "EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89"
 
+# Mainnet用（本番環境）
 [programs.mainnet]
 facility_game = "EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89"
 
+# ===== レジストリ設定 =====
 [registry]
+# Anchorプログラムレジストリ のURL
+# 検証済みビルドの公開や他のプログラムとの連携に使用
 url = "https://api.apr.dev"
 
+# ===== プロバイダー設定 =====
 [provider]
+# デフォルトで使用するクラスター
+# "Localnet", "Devnet", "Testnet", "Mainnet" から選択
+# anchor test や anchor deploy で --provider.cluster を指定しない場合に使用
 cluster = "Localnet"
+# cluster = "devnet"
+
+# デフォルトで使用するウォレット
+# Solana CLIで生成されたキーペアファイルのパス
+# solana-keygen new で生成可能
+# 注意: deploy-keypair.json等のローカル秘密鍵ファイルは絶対に公開しない
 wallet = "~/.config/solana/id.json"
 
+# ===== カスタムRPCエンドポイント設定 =====
+# 各クラスターで使用するRPCエンドポイントをカスタマイズ
+# デフォルトのPublic RPCは混雑することがあるため、
+# プライベートRPCの使用を推奨
+
+# Devnet用カスタムRPC（Heliusの例）
+# 環境変数 HELIUS_API_KEY_DEVNET を使用してください
+# 使用方法: HELIUS_API_KEY_DEVNET=your_api_key anchor test --provider.cluster devnet
+[clusters.devnet]
+url = "https://devnet.helius-rpc.com/?api-key=${HELIUS_API_KEY_DEVNET}"
+
+# Mainnet用カスタムRPC（Heliusの例）
+# YOUR_MAINNET_API_KEY を実際のAPIキーに置き換えてください
+# 本番環境では高性能なRPCプロバイダーの使用が重要
+[clusters.mainnet]
+url = "https://mainnet.helius-rpc.com/?api-key=YOUR_MAINNET_API_KEY"
+
+
+# ===== スクリプト設定 =====
 [scripts]
+# anchor test 実行時に使用されるテストコマンド
+# ts-mocha: TypeScriptテストランナー
+# -p ./tsconfig.json: TypeScript設定ファイルを指定
+# -t 1000000: タイムアウト時間をミリ秒で指定（1000秒）
+# tests/**/*.ts: testsディレクトリ内のすべての.tsファイルを実行
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
