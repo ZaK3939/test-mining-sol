@@ -1,21 +1,35 @@
 // メインアプリケーション
 
+import { PublicKey } from '@solana/web3.js';
 import { SolanaService } from './solana';
+import { GameService, type UICallbacks } from './services/game-service';
 import { logger } from './logger';
 import {
   GAME_CONSTANTS,
   UI_CONSTANTS,
-  SUCCESS_MESSAGES,
   NETWORK_CONSTANTS,
 } from './utils/constants';
 import type { WalletState, GameState } from './types';
 
 class FacilityGameApp {
   private solanaService: SolanaService;
+  private gameService: GameService;
   private currentWallet: WalletState | null = null;
+  private uiCallbacks: UICallbacks;
 
   constructor() {
     this.solanaService = new SolanaService();
+    this.gameService = new GameService(this.solanaService);
+    
+    // UI コールバックを初期化
+    this.uiCallbacks = {
+      showLoading: (message: string) => this.showLoading(message),
+      hideLoading: () => this.hideLoading(),
+      showSuccess: (message: string) => this.showSuccess(message),
+      showError: (message: string) => this.showError(message),
+      updateGameState: () => this.handleRefreshData()
+    };
+    
     this.init();
   }
 
@@ -53,7 +67,7 @@ class FacilityGameApp {
       await this.handleWalletConnect();
     });
 
-    // ゲームアクション（プレースホルダー）
+    // 基本ゲームアクション
     document.getElementById('init-user')?.addEventListener('click', () => {
       this.handleInitUser();
     });
@@ -64,6 +78,34 @@ class FacilityGameApp {
 
     document.getElementById('claim-rewards')?.addEventListener('click', () => {
       this.handleClaimRewards();
+    });
+
+    // 紹介システム
+    document.getElementById('claim-referral-rewards')?.addEventListener('click', () => {
+      this.handleClaimReferralRewards();
+    });
+
+    // 施設管理
+    document.getElementById('upgrade-facility')?.addEventListener('click', () => {
+      this.handleUpgradeFacility();
+    });
+
+    document.getElementById('add-machine')?.addEventListener('click', () => {
+      this.handleAddMachine();
+    });
+
+    // 転送システム
+    document.getElementById('transfer-tokens')?.addEventListener('click', () => {
+      this.handleTransferTokens();
+    });
+
+    // ミステリーボックス
+    document.getElementById('purchase-mystery-box')?.addEventListener('click', () => {
+      this.handlePurchaseMysteryBox();
+    });
+
+    document.getElementById('open-mystery-box')?.addEventListener('click', () => {
+      this.handleOpenMysteryBox();
     });
 
     // データ更新
@@ -106,7 +148,22 @@ class FacilityGameApp {
     }
 
     try {
-      const gameState = await this.solanaService.getGameState();
+      const detailedState = await this.gameService.getGameState();
+      // Convert to UI-compatible GameState
+      const gameState: GameState = {
+        userInitialized: detailedState.userInitialized,
+        hasFacility: detailedState.hasFacility,
+        growPower: detailedState.growPower,
+        tokenBalance: detailedState.tokenBalance,
+        lastHarvestTime: detailedState.userState?.lastHarvestTime.toNumber() || 0,
+        pendingReferralRewards: detailedState.pendingReferralRewards,
+        facility: detailedState.facility ? {
+          facilitySize: detailedState.facility.facilitySize,
+          maxCapacity: detailedState.facility.maxCapacity,
+          machineCount: detailedState.facility.machineCount,
+          totalGrowPower: detailedState.facility.totalGrowPower.toNumber()
+        } : undefined
+      };
       this.updateGameDisplay(gameState);
     } catch (error) {
       logger.error(`データ更新エラー: ${error instanceof Error ? error.message : String(error)}`);
@@ -115,129 +172,84 @@ class FacilityGameApp {
 
   private async handleInitUser() {
     logger.info('👤 ユーザー初期化機能');
-
-    try {
-      if (!this.solanaService.getWalletState().connected) {
-        throw new Error('ウォレットが接続されていません');
-      }
-
-      const anchorClient = this.solanaService.getAnchorClient();
-
-      this.showLoading('ユーザーアカウントを初期化中...');
-
-      const tx = await anchorClient.initUser();
-
-      if (tx === 'already_initialized') {
-        this.showSuccess('ユーザーアカウントは既に初期化済みです！');
-      } else {
-        logger.success(`ユーザー初期化成功: ${tx}`);
-        this.showSuccess('ユーザーアカウントの初期化が完了しました！');
-      }
-
-      // ゲーム状態を更新
-      await this.handleRefreshData();
-    } catch (error) {
-      logger.error(
-        `ユーザー初期化エラー: ${error instanceof Error ? error.message : String(error)}`
-      );
-      this.showError(
-        `初期化に失敗しました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    } finally {
-      this.hideLoading();
-    }
+    await this.gameService.initializeUser(this.uiCallbacks);
   }
 
   private async handleBuyFacility() {
     logger.info('🏭 施設購入機能');
-
-    try {
-      if (!this.solanaService.getWalletState().connected) {
-        throw new Error('ウォレットが接続されていません');
-      }
-
-      const anchorClient = this.solanaService.getAnchorClient();
-
-      this.showLoading('施設を購入中...');
-
-      const tx = await anchorClient.buyFacility();
-
-      if (tx === 'already_owned') {
-        this.showSuccess('施設は既に所有済みです！');
-      } else {
-        logger.success(`施設購入成功: ${tx}`);
-        this.showSuccess(
-          `施設の購入が完了しました！Grow Power: ${GAME_CONSTANTS.INITIAL_GROW_POWER}`
-        );
-      }
-
-      // ゲーム状態を更新
-      await this.handleRefreshData();
-    } catch (error) {
-      logger.error(`施設購入エラー: ${error instanceof Error ? error.message : String(error)}`);
-      this.showError(
-        `購入に失敗しました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    } finally {
-      this.hideLoading();
-    }
+    await this.gameService.purchaseFacility(this.uiCallbacks);
   }
 
   private async handleClaimRewards() {
     logger.info('💰 報酬請求機能');
-
-    try {
-      if (!this.solanaService.getWalletState().connected) {
-        throw new Error('ウォレットが接続されていません');
-      }
-
-      const anchorClient = this.solanaService.getAnchorClient();
-
-      this.showLoading('報酬を請求中...');
-
-      const tx = await anchorClient.claimRewards();
-      logger.success(`報酬請求成功: ${tx}`);
-
-      // ゲーム状態を更新
-      await this.handleRefreshData();
-
-      this.showSuccess('報酬の請求が完了しました！');
-    } catch (error) {
-      logger.error(`報酬請求エラー: ${error instanceof Error ? error.message : String(error)}`);
-      this.showError(
-        `請求に失敗しました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    } finally {
-      this.hideLoading();
-    }
+    await this.gameService.claimRewards(this.uiCallbacks);
   }
 
   private async handleAirdrop() {
     logger.info('💰 SOLエアドロップ（開発用）');
+    await this.gameService.requestAirdrop(NETWORK_CONSTANTS.DEFAULT_AIRDROP_AMOUNT, {
+      ...this.uiCallbacks,
+      updateGameState: async () => {
+        // エアドロップ後はウォレット表示を更新
+        const walletState = this.solanaService.getWalletState();
+        this.updateWalletDisplay(walletState);
+      }
+    });
+  }
+
+  private async handleClaimReferralRewards() {
+    logger.info('💰 紹介報酬請求機能');
+    await this.gameService.claimReferralRewards(this.uiCallbacks);
+  }
+
+  private async handleUpgradeFacility() {
+    logger.info('🔧 施設アップグレード機能');
+    await this.gameService.upgradeFacility(this.uiCallbacks);
+  }
+
+  private async handleAddMachine() {
+    logger.info('⚙️ マシン追加機能');
+    await this.gameService.addMachine(this.uiCallbacks);
+  }
+
+  private async handleTransferTokens() {
+    logger.info('💸 トークン転送機能');
 
     try {
-      if (!this.solanaService.getWalletState().connected) {
-        throw new Error('ウォレットが接続されていません');
+      // 簡単な例として固定値を使用（実際のUIでは入力フィールドから取得）
+      const recipientAddress = prompt('送信先アドレスを入力してください:');
+      const amount = prompt('送信量を入力してください:');
+
+      if (!recipientAddress || !amount) {
+        throw new Error('アドレスまたは送信量が入力されていません');
       }
 
-      this.showLoading('SOLをエアドロップ中...');
-
-      await this.solanaService.airdropSol(NETWORK_CONSTANTS.DEFAULT_AIRDROP_AMOUNT);
-
-      // ウォレット表示を更新
-      const walletState = this.solanaService.getWalletState();
-      this.updateWalletDisplay(walletState);
-
-      this.showSuccess(
-        SUCCESS_MESSAGES.AIRDROP_COMPLETED(NETWORK_CONSTANTS.DEFAULT_AIRDROP_AMOUNT)
-      );
+      const recipientPublicKey = new PublicKey(recipientAddress);
+      await this.gameService.transferTokens(recipientPublicKey, parseInt(amount), this.uiCallbacks);
     } catch (error) {
-      logger.error(`エアドロップエラー: ${error instanceof Error ? error.message : String(error)}`);
-      this.showError(
-        `エアドロップに失敗しました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    } finally {
-      this.hideLoading();
+      this.showError(`入力エラー: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handlePurchaseMysteryBox() {
+    logger.info('📦 ミステリーボックス購入機能');
+    await this.gameService.purchaseMysteryBox(this.uiCallbacks);
+  }
+
+  private async handleOpenMysteryBox() {
+    logger.info('📦 ミステリーボックス開封機能');
+
+    try {
+      // 簡単な例として固定値を使用（実際のUIでは選択リストから取得）
+      const mysteryBoxId = prompt('開封するミステリーボックスのIDを入力してください:');
+
+      if (!mysteryBoxId) {
+        throw new Error('ミステリーボックスIDが入力されていません');
+      }
+
+      await this.gameService.openMysteryBox(parseInt(mysteryBoxId), this.uiCallbacks);
+    } catch (error) {
+      this.showError(`入力エラー: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -310,6 +322,8 @@ class FacilityGameApp {
     const facilityStateEl = document.getElementById('facility-state');
     const growPowerEl = document.getElementById('grow-power');
     const tokenBalanceEl = document.getElementById('token-balance');
+    const facilityDetailsEl = document.getElementById('facility-details');
+    const referralRewardsEl = document.getElementById('referral-rewards');
 
     if (userStateEl) {
       userStateEl.textContent = gameState.userInitialized ? '初期化済み' : '未初期化';
@@ -328,10 +342,31 @@ class FacilityGameApp {
       const tokenBalance = gameState.tokenBalance / Math.pow(10, GAME_CONSTANTS.TOKEN_DECIMALS);
       tokenBalanceEl.textContent = `${tokenBalance.toFixed(UI_CONSTANTS.TOKEN_DECIMAL_PLACES)} ${GAME_CONSTANTS.TOKEN_SYMBOL}`;
     }
+
+    // 施設詳細情報の更新
+    if (facilityDetailsEl && gameState.facility) {
+      facilityDetailsEl.innerHTML = `
+        <div><strong>サイズ:</strong> ${gameState.facility.facilitySize}</div>
+        <div><strong>最大容量:</strong> ${gameState.facility.maxCapacity}</div>
+        <div><strong>マシン数:</strong> ${gameState.facility.machineCount}</div>
+      `;
+    } else if (facilityDetailsEl) {
+      facilityDetailsEl.innerHTML = '<div>施設なし</div>';
+    }
+
+    // 紹介報酬の更新
+    if (referralRewardsEl && gameState.pendingReferralRewards !== undefined) {
+      const referralRewards = gameState.pendingReferralRewards / Math.pow(10, GAME_CONSTANTS.TOKEN_DECIMALS);
+      referralRewardsEl.textContent = `${referralRewards.toFixed(UI_CONSTANTS.TOKEN_DECIMAL_PLACES)} ${GAME_CONSTANTS.TOKEN_SYMBOL}`;
+    }
   }
 
   private enableGameButtons() {
-    const buttons = ['init-user', 'buy-facility', 'claim-rewards', 'airdrop-sol'];
+    const buttons = [
+      'init-user', 'buy-facility', 'claim-rewards', 'airdrop-sol',
+      'claim-referral-rewards', 'upgrade-facility', 'add-machine', 
+      'transfer-tokens', 'purchase-mystery-box', 'open-mystery-box'
+    ];
     buttons.forEach((id) => {
       const button = document.getElementById(id) as HTMLButtonElement;
       if (button) button.disabled = false;
@@ -371,6 +406,17 @@ if (typeof document !== 'undefined') {
       const service = new SolanaService();
       return await service.testConnection();
     };
+    
+    // Manual test function for browser console
+    (window as any).runManualTest = async () => {
+      const { runManualFrontendTest } = await import('./test/manual-frontend-test');
+      return await runManualFrontendTest();
+    };
+    
+    console.log('🎮 Facility Game Frontend loaded!');
+    console.log('💡 Available console commands:');
+    console.log('  - testHeliusConnection(): Test RPC connection');
+    console.log('  - runManualTest(): Run comprehensive frontend test');
   });
 }
 

@@ -19,4 +19,13 @@ pub enum GameError {
     
     #[msg("Unauthorized")]
     Unauthorized,
+    
+    #[msg("Invalid referrer")]
+    InvalidReferrer,
+    
+    #[msg("Insufficient funds")]
+    InsufficientFunds,
+    
+    #[msg("Facility is at maximum capacity")]
+    FacilityAtMaxCapacity,
 }

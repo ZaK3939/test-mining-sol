@@ -13,6 +13,9 @@ import * as borsh from 'borsh';
 const PROGRAM_ID = new PublicKey('EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89');
 const RPC_URL = 'http://localhost:8899';
 
+// Metaplex Token Metadata Program ID
+const TOKEN_METADATA_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+
 // 管理者のキーペアを読み込む
 function loadAdminKeypair(): Keypair {
   try {
@@ -88,6 +91,7 @@ function createRewardMintInstruction(
   programId: PublicKey,
   rewardMint: PublicKey,
   mintAuthority: PublicKey,
+  metadataAccount: PublicKey,
   admin: PublicKey,
   rent: PublicKey
 ): TransactionInstruction {
@@ -98,10 +102,12 @@ function createRewardMintInstruction(
     keys: [
       { pubkey: rewardMint, isSigner: false, isWritable: true },
       { pubkey: mintAuthority, isSigner: false, isWritable: false },
+      { pubkey: metadataAccount, isSigner: false, isWritable: true },
       { pubkey: admin, isSigner: true, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       { pubkey: rent, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_METADATA_ID, isSigner: false, isWritable: false },
     ],
     programId,
     data: discriminator,
@@ -177,12 +183,23 @@ async function initialize() {
     if (!mintExists) {
       logger.info('🪙 Reward Mint を作成中...');
       
+      // Derive metadata account PDA
+      const [metadataAccount] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('metadata'),
+          TOKEN_METADATA_ID.toBuffer(),
+          pdas.rewardMint.toBuffer()
+        ],
+        TOKEN_METADATA_ID
+      );
+      
       const rentPubkey = new PublicKey('SysvarRent111111111111111111111111111111111');
       
       const createMintIx = createRewardMintInstruction(
         PROGRAM_ID,
         pdas.rewardMint,
         pdas.mintAuthority,
+        metadataAccount,
         adminKeypair.publicKey,
         rentPubkey
       );
@@ -191,8 +208,10 @@ async function initialize() {
       const sig2 = await connection.sendTransaction(tx2, [adminKeypair]);
       await connection.confirmTransaction(sig2);
       
-      logger.success(`✅ Reward Mint 作成成功! TX: ${sig2}`);
+      logger.success(`✅ Reward Mint ($WEED) 作成成功! TX: ${sig2}`);
       logger.info(`  - Mint Address: ${pdas.rewardMint.toBase58()}`);
+      logger.info(`  - Token Name: Weed Token`);
+      logger.info(`  - Token Symbol: WEED`);
     }
     
     // 5. 残高確認

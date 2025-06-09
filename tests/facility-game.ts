@@ -10,6 +10,9 @@ import {
 } from '@solana/spl-token';
 import { expect } from 'chai';
 
+// Metaplex Token Metadata Program ID
+const TOKEN_METADATA_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+
 describe('facility-game', () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env();
@@ -73,15 +76,27 @@ describe('facility-game', () => {
   });
 
   it('Create reward mint', async () => {
+    // Derive metadata account PDA
+    const [metadataAccount] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from('metadata'),
+        TOKEN_METADATA_ID.toBuffer(),
+        rewardMintPda.toBuffer()
+      ],
+      TOKEN_METADATA_ID
+    );
+
     await program.methods
       .createRewardMint()
       .accounts({
         rewardMint: rewardMintPda,
         mintAuthority: mintAuthorityPda,
+        metadataAccount: metadataAccount,
         admin: admin.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenMetadataProgram: TOKEN_METADATA_ID,
       })
       .rpc();
 

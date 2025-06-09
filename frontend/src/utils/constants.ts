@@ -11,7 +11,7 @@ export const GAME_CONSTANTS = {
 
   // トークン関連
   TOKEN_DECIMALS: 6,
-  TOKEN_SYMBOL: 'REWARD',
+  TOKEN_SYMBOL: 'WEED',
 
   // 時間関連
   DEFAULT_HALVING_INTERVAL: 31536000, // 1年 (秒)

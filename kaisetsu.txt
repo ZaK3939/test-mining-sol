@@ -25,7 +25,7 @@
 ## プログラム構造
 
 ### 1. メインプログラム（lib.rs）
-プログラムは5つの主要な命令（instruction）を持っています：
+プログラムは11つの主要な命令（instruction）を持っています：
 
 #### initialize_config
 - **目的**: システム全体の設定を初期化
@@ -33,6 +33,7 @@
 - **パラメータ**:
   - base_rate: 基本報酬レート
   - halving_interval: 半減期の間隔（秒単位）
+  - treasury: 手数料収集用トレジャリーアカウント
 - **動作**: グローバル設定を保存し、最初の半減期時刻を設定
 
 #### create_reward_mint
@@ -43,7 +44,8 @@
 #### init_user
 - **目的**: 新規ユーザーのアカウントを初期化
 - **権限**: ユーザー自身が実行
-- **動作**: ユーザー状態を初期化し、最終収穫時刻を現在時刻に設定
+- **パラメータ**: referrer (Option<Pubkey>) - 招待者のアドレス（オプション）
+- **動作**: ユーザー状態を初期化し、最終収穫時刻を現在時刻に設定、リファラル情報を保存
 
 #### buy_facility
 - **目的**: 施設を購入し、初期マシンを配置
@@ -64,6 +66,47 @@
   4. SPLトークンをユーザーのトークンアカウントにミント
   5. 最終収穫時刻を更新
 
+#### distribute_referral_reward
+- **目的**: リファラル報酬を累積
+- **権限**: 被招待者が実行
+- **パラメータ**: reward_amount (u64) - 基本報酬額
+- **動作**: 
+  1. リファラル報酬を計算（基本報酬の10%）
+  2. リファラーのpending_referral_rewardsに累積
+
+#### claim_referral_rewards
+- **目的**: 累積されたリファラル報酬を請求
+- **権限**: リファラー自身が実行
+- **動作**:
+  1. pending_referral_rewardsをチェック
+  2. SPLトークンとして発行
+  3. pending_referral_rewardsをリセット
+
+#### upgrade_facility
+- **目的**: 施設サイズをアップグレード
+- **権限**: 施設所有者が実行
+- **動作**:
+  1. アップグレードコストを計算（段階的に増加）
+  2. $WEEDトークンをバーン（破棄）
+  3. 施設サイズとmax_capacityを更新
+
+#### add_machine
+- **目的**: 施設にマシンを追加
+- **権限**: 施設所有者が実行
+- **コスト**: 固定500 $WEED
+- **動作**:
+  1. 容量制限をチェック
+  2. $WEEDトークンをバーン
+  3. マシン数とGrow Powerを増加
+
+#### transfer_with_fee
+- **目的**: 2%手数料付きトークン転送
+- **権限**: トークン所有者が実行
+- **動作**:
+  1. 転送量から2%の手数料を計算
+  2. 手数料をトレジャリーアカウントに送金
+  3. 残り98%を受信者に送金
+
 ### 2. 状態管理（state.rs）
 
 #### Config（グローバル設定）
@@ -73,18 +116,21 @@ pub struct Config {
     pub halving_interval: i64,    // 半減期間隔（秒）
     pub next_halving_time: i64,   // 次回半減期の時刻
     pub admin: Pubkey,            // 管理者アドレス
-    pub reserve: [u8; 64],        // 将来の拡張用
+    pub treasury: Pubkey,         // トレジャリーアカウント（手数料収集先）
+    pub reserve: [u8; 32],        // 将来の拡張用
 }
 ```
 
 #### UserState（ユーザー状態）
 ```rust
 pub struct UserState {
-    pub owner: Pubkey,              // ユーザーの公開鍵
-    pub total_grow_power: u64,      // 総Grow Power
-    pub last_harvest_time: i64,     // 最後の収穫時刻
-    pub has_facility: bool,         // 施設所有フラグ
-    pub reserve: [u8; 64],          // 将来の拡張用
+    pub owner: Pubkey,                    // ユーザーの公開鍵
+    pub total_grow_power: u64,            // 総Grow Power
+    pub last_harvest_time: i64,           // 最後の収穫時刻
+    pub has_facility: bool,               // 施設所有フラグ
+    pub referrer: Option<Pubkey>,         // 招待者のアドレス（オプション）
+    pub pending_referral_rewards: u64,   // 累積リファラル報酬（未請求）
+    pub reserve: [u8; 55],                // 将来の拡張用
 }
 ```
 
@@ -92,9 +138,11 @@ pub struct UserState {
 ```rust
 pub struct Facility {
     pub owner: Pubkey,              // 所有者
-    pub machine_count: u32,         // マシン数
+    pub facility_size: u32,         // 施設サイズ/レベル
+    pub max_capacity: u32,          // 最大マシン容量
+    pub machine_count: u32,         // 現在のマシン数
     pub total_grow_power: u64,      // 総Grow Power
-    pub reserve: [u8; 64],          // 将来の拡張用
+    pub reserve: [u8; 56],          // 将来の拡張用
 }
 ```
 
@@ -116,6 +164,11 @@ Program Derived Address (PDA)を使用して、決定論的なアカウントア
 1. **遅延計算（Lazy Evaluation）**: 報酬は請求時にのみ計算される
 2. **時間ベース**: 最後の収穫からの経過時間に基づいて報酬が蓄積
 3. **線形成長**: 報酬 = (経過時間[秒] × Grow Power × base_rate) / 1000
+4. **トークン仕様**: 
+   - トークン名: Weed Token
+   - シンボル: $WEED
+   - 小数点以下桁数: 6
+   - SPL Token Metadataプログラムによるメタデータ管理
 
 ### 半減期メカニズム
 - 設定された間隔（デフォルト1年）ごとにbase_rateが半分になる
@@ -124,7 +177,32 @@ Program Derived Address (PDA)を使用して、決定論的なアカウントア
 ### 制限事項
 - 各ユーザーは1つの施設のみ所有可能（MVP版の制限）
 - 施設購入時に自動的に1台のマシンが配置される
-- マシンの追加やアップグレードは現在未実装
+- マシン追加は施設の容量制限内のみ
+
+### リファラル（招待）システム
+1. **招待機能**: ユーザー初期化時にリファラー（招待者）を指定可能
+2. **報酬分配**: 被招待者が報酬を請求する際、リファラーに10%のボーナス報酬
+3. **累積システム**: リファラル報酬は`pending_referral_rewards`に累積
+4. **請求機能**: リファラーは別途`claim_referral_rewards`で報酬を請求
+
+### 施設サイズ・アップグレードシステム
+1. **階層システム**: 施設サイズは1から段階的にアップグレード可能
+2. **容量拡張**: サイズアップでマシン容量が増加
+   - サイズ1: 1台, サイズ2: 3台, サイズ3: 6台, サイズ4: 10台, サイズ5: 15台
+   - サイズ6以降: 5台ずつ増加
+3. **アップグレードコスト**: $WEEDトークンを消費
+   - サイズ1→2: 1000 $WEED
+   - サイズ2→3: 2500 $WEED
+   - サイズ3→4: 5000 $WEED
+   - サイズ4→5: 10000 $WEED
+   - サイズ6以降: 5000ずつ増加
+4. **マシン追加**: 容量内で追加マシンを購入可能（500 $WEED/台）
+
+### 転送手数料システム
+1. **手数料徴収**: 全ての$WEEDトークン転送時に2%の手数料を自動徴収
+2. **手数料配分**: 徴収された手数料は設定されたトレジャリーアカウントに送金
+3. **透明性**: 受信者は転送額の98%を受け取り、手数料は明示的に分離
+4. **プログラム経由**: 直接のSPLトークン転送ではなく、プログラム経由の転送が必要
 
 ## セキュリティ考慮事項
 

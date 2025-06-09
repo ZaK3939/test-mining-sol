@@ -10,6 +10,9 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
+// Metaplex Token Metadata Program ID
+const TOKEN_METADATA_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+
 // 設定
 const PROGRAM_ID = new PublicKey('EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89');
 const RPC_URL = 'http://localhost:8899';
@@ -157,20 +160,34 @@ async function initialize() {
     if (!mintExists) {
       logger.info('🪙 Reward Mint を作成中...');
       
+      // Derive metadata account PDA
+      const [metadataAccount] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from('metadata'),
+          TOKEN_METADATA_ID.toBuffer(),
+          pdas.rewardMint.toBuffer()
+        ],
+        TOKEN_METADATA_ID
+      );
+      
       const tx2 = await program.methods
         .createRewardMint()
         .accounts({
           rewardMint: pdas.rewardMint,
           mintAuthority: pdas.mintAuthority,
+          metadataAccount: metadataAccount,
           admin: wallet.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
+          tokenMetadataProgram: TOKEN_METADATA_ID,
         })
         .rpc();
       
-      logger.success(`✅ Reward Mint 作成成功! TX: ${tx2}`);
+      logger.success(`✅ Reward Mint ($WEED) 作成成功! TX: ${tx2}`);
       logger.info(`  - Mint Address: ${pdas.rewardMint.toBase58()}`);
+      logger.info(`  - Token Name: Weed Token`);
+      logger.info(`  - Token Symbol: WEED`);
     }
     
     // 5. 残高確認

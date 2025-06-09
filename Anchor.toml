@@ -27,15 +27,15 @@ skip-lint = false
 
 # ローカルネット用（開発環境）
 [programs.localnet]
-facility_game = "EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89"
+facility_game = "7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB"
 
 # Devnet用（テストネット）
 [programs.devnet]
-facility_game = "EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89"
+facility_game = "7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB"
 
 # Mainnet用（本番環境）
 [programs.mainnet]
-facility_game = "EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89"
+facility_game = "7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB"
 
 # ===== レジストリ設定 =====
 [registry]
@@ -48,8 +48,8 @@ url = "https://api.apr.dev"
 # デフォルトで使用するクラスター
 # "Localnet", "Devnet", "Testnet", "Mainnet" から選択
 # anchor test や anchor deploy で --provider.cluster を指定しない場合に使用
-cluster = "Localnet"
-# cluster = "devnet"
+# cluster = "Localnet"
+cluster = "devnet"
 
 # デフォルトで使用するウォレット
 # Solana CLIで生成されたキーペアファイルのパス

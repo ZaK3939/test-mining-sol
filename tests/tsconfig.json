@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["mocha", "chai", "node"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": []
+}

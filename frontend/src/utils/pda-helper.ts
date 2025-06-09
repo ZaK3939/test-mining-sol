@@ -10,6 +10,7 @@ export interface PDAs {
   config: PublicKey;
   rewardMint: PublicKey;
   mintAuthority: PublicKey;
+  treasury: PublicKey;
 }
 
 /**
@@ -46,12 +47,18 @@ export class PDAHelper {
       programId
     );
 
+    const [treasury] = await PublicKey.findProgramAddress(
+      [Buffer.from('treasury')],
+      programId
+    );
+
     return {
       userState,
       facility,
       config,
       rewardMint,
       mintAuthority,
+      treasury,
     };
   }
 

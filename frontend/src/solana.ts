@@ -7,20 +7,15 @@ import {
   Transaction,
   VersionedTransaction,
 } from '@solana/web3.js';
-import {
-  getAssociatedTokenAddress,
-  getAccount,
-  TokenAccountNotFoundError,
-  TokenInvalidAccountOwnerError,
-} from '@solana/spl-token';
+// SPL Token imports removed - using anchor client for token operations
 import { AnchorProvider, setProvider } from '@coral-xyz/anchor';
 import { Buffer } from 'buffer';
 import { config } from './config';
 import { logger } from './logger';
 import { AnchorClient } from './anchor-client';
 import { PDAHelper } from './utils/pda-helper';
-import { GAME_CONSTANTS, NETWORK_CONSTANTS } from './utils/constants';
-import type { WalletState, GameState } from './types';
+import { NETWORK_CONSTANTS } from './utils/constants';
+import type { WalletState, GameState, DetailedGameState, NetworkInfo } from './types';
 
 // Bufferをグローバルに設定
 if (typeof window !== 'undefined') {
@@ -148,83 +143,78 @@ export class SolanaService {
     return await PDAHelper.calculatePDAs(userPublicKey, programId);
   }
 
-  // ゲーム状態取得
+  // ゲーム状態取得（UI表示用に変換）
   async getGameState(): Promise<GameState> {
-    if (!this.wallet.publicKey) {
+    if (!this.wallet.publicKey || !this.anchorClient) {
       throw new Error('ウォレットが接続されていません');
     }
 
     try {
       logger.info('🎮 ゲーム状態を取得中...');
-
-      const pdas = await this.calculatePDAs(this.wallet.publicKey);
-
-      // アカウント情報取得
-      const [userStateAccount, facilityAccount] = await Promise.all([
-        this.connection.getAccountInfo(pdas.userState),
-        this.connection.getAccountInfo(pdas.facility),
-      ]);
-
-      const gameState: GameState = {
-        userInitialized: !!userStateAccount,
-        hasFacility: !!facilityAccount,
-        growPower: 0,
-        tokenBalance: 0,
-        lastHarvestTime: 0,
-      };
-
-      if (userStateAccount) {
-        logger.success(`ユーザー状態確認: ${pdas.userState.toString()}`);
-      } else {
-        logger.info('ユーザー未初期化');
-      }
-
-      if (facilityAccount) {
-        logger.success(`施設確認: ${pdas.facility.toString()}`);
-        // 簡易的にGrow Powerを初期値に設定（実際はアカウントデータを解析）
-        gameState.growPower = GAME_CONSTANTS.INITIAL_GROW_POWER;
-      } else {
-        logger.info('施設未所有');
-      }
-
-      // トークン残高確認
-      try {
-        const userTokenAccount = await getAssociatedTokenAddress(
-          pdas.rewardMint,
-          this.wallet.publicKey
-        );
-
-        try {
-          const tokenAccount = await getAccount(this.connection, userTokenAccount);
-          const balance = Number(tokenAccount.amount);
-          gameState.tokenBalance = balance;
-          logger.info(`トークンアカウント確認: ${userTokenAccount.toString()}, 残高: ${balance}`);
-        } catch (error) {
-          if (error instanceof TokenAccountNotFoundError) {
-            logger.info('トークンアカウントが見つかりません（報酬請求時に自動作成されます）');
-            gameState.tokenBalance = 0;
-          } else if (error instanceof TokenInvalidAccountOwnerError) {
-            logger.warn('トークンアカウントの所有者が無効です');
-            gameState.tokenBalance = 0;
-          } else {
-            throw error;
-          }
-        }
-      } catch (error) {
-        logger.warn(
-          `トークン残高確認エラー: ${error instanceof Error ? error.message : String(error)}`
-        );
-        gameState.tokenBalance = 0;
-      }
-
-      logger.success('ゲーム状態取得完了');
-      return gameState;
+      const detailedState = await this.anchorClient.fetchCompleteGameState(this.wallet.publicKey);
+      return this.convertToUIGameState(detailedState);
     } catch (error) {
       logger.error(
         `ゲーム状態取得エラー: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
     }
+  }
+
+  // 詳細なゲーム状態を取得（内部処理用）
+  async getDetailedGameState(): Promise<DetailedGameState> {
+    if (!this.wallet.publicKey || !this.anchorClient) {
+      return {
+        userState: null,
+        facility: null,
+        config: null,
+        tokenBalance: 0,
+        userInitialized: false,
+        hasFacility: false,
+        growPower: 0,
+        pendingReferralRewards: 0
+      };
+    }
+
+    return await this.anchorClient.fetchCompleteGameState(this.wallet.publicKey);
+  }
+
+  // 内部状態をUI表示用に変換
+  private convertToUIGameState(detailedState: DetailedGameState): GameState {
+    const gameState: GameState = {
+      userInitialized: detailedState.userInitialized,
+      hasFacility: detailedState.hasFacility,
+      growPower: detailedState.growPower,
+      tokenBalance: detailedState.tokenBalance,
+      lastHarvestTime: detailedState.userState?.lastHarvestTime.toNumber() || 0,
+      pendingReferralRewards: detailedState.pendingReferralRewards,
+    };
+
+    // 施設情報を追加
+    if (detailedState.facility) {
+      gameState.facility = {
+        facilitySize: detailedState.facility.facilitySize,
+        maxCapacity: detailedState.facility.maxCapacity,
+        machineCount: detailedState.facility.machineCount,
+        totalGrowPower: detailedState.facility.totalGrowPower.toNumber(),
+      };
+      logger.success(`施設確認: サイズ${detailedState.facility.facilitySize}, マシン${detailedState.facility.machineCount}`);
+    } else {
+      logger.info('施設未所有');
+    }
+
+    if (detailedState.userState) {
+      logger.success(`ユーザー状態確認: Grow Power ${gameState.growPower}`);
+      if (detailedState.userState.referrer) {
+        logger.info(`紹介者: ${detailedState.userState.referrer.toString()}`);
+      }
+    } else {
+      logger.info('ユーザー未初期化');
+    }
+
+    logger.info(`トークン残高: ${gameState.tokenBalance} WEED`);
+    logger.success('ゲーム状態取得完了');
+    return gameState;
   }
 
   // 現在のウォレット状態を取得
@@ -238,7 +228,7 @@ export class SolanaService {
   }
 
   // ネットワーク情報を取得
-  getNetworkInfo() {
+  getNetworkInfo(): NetworkInfo {
     return {
       network: config.network,
       rpcUrl:
