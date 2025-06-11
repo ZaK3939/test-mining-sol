@@ -23,13 +23,18 @@ export function getErrorMessage(error: unknown): string {
   // 既知のエラーパターンをマッピング
   if (
     errorMessage.includes('Attempt to debit an account but found no record of a prior credit') ||
-    errorMessage.includes('insufficient funds')
+    errorMessage.includes('insufficient funds') ||
+    errorMessage.includes('Transaction simulation failed: Attempt to debit an account')
   ) {
     return ERROR_MESSAGES.INSUFFICIENT_FUNDS;
   }
 
   if (errorMessage.includes('not connected')) {
     return ERROR_MESSAGES.WALLET_NOT_CONNECTED;
+  }
+
+  if (errorMessage.includes('Transaction simulation failed')) {
+    return `トランザクションシミュレーションに失敗しました。ウォレットの残高を確認してください。`;
   }
 
   // その他のエラーはそのまま返す
@@ -40,7 +45,7 @@ export function getErrorMessage(error: unknown): string {
  * 共通のエラーハンドリングデコレータ
  * 非同期関数用
  */
-export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
+export function withErrorHandling<T extends (...args: unknown[]) => Promise<unknown>>(
   fn: T,
   options: {
     showLoading?: (message: string) => void;

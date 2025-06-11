@@ -9,13 +9,15 @@ import { config } from '../config';
 // Simple manual test to verify frontend functionality
 export async function runManualFrontendTest() {
   console.log('🎯 Manual Frontend Test Starting...');
-  
+
   try {
     // Test 1: Configuration loading
     console.log('✅ Config loaded:', {
       programId: config.programId,
       network: config.network,
-      rpcUrl: config.rpcUrl.includes('api-key') ? config.rpcUrl.split('?')[0] + '?api-key=***' : config.rpcUrl
+      rpcUrl: config.rpcUrl.includes('api-key')
+        ? config.rpcUrl.split('?')[0] + '?api-key=***'
+        : config.rpcUrl,
     });
 
     // Test 2: SolanaService initialization
@@ -35,7 +37,7 @@ export async function runManualFrontendTest() {
     // Test 5: Logger functionality
     logger.info('🧪 Testing logger functionality');
     logger.success('✅ Logger working correctly');
-    
+
     console.log('🎉 All manual tests passed!');
     return true;
   } catch (error) {

@@ -3,8 +3,17 @@
   "compilerOptions": {
     "strict": false,
     "skipLibCheck": true,
-    "types": ["mocha", "chai", "node"]
+    "types": ["mocha", "chai", "node"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
   },
-  "include": ["**/*.ts"],
-  "exclude": []
+  "include": [
+    "**/*.ts",
+    "../target/types/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

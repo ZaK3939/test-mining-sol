@@ -4,19 +4,19 @@
 export {
   type WalletAdapter,
   type UserStateAccount,
-  type FacilityAccount,
+  type FarmSpaceAccount,
   type ConfigAccount,
-  type MysteryBoxAccount,
+  type SeedPackAccount,
   type SeedAccount,
   type TransactionResult,
   type ProgramError,
   type TokenAmount,
   SeedRarity,
   isUserStateAccount,
-  isFacilityAccount,
+  isFarmSpaceAccount,
   isConfigAccount,
   safeBNToNumber,
-  formatTokenAmount
+  formatTokenAmount,
 } from './types/program-types';
 
 import { PublicKey } from '@solana/web3.js';
@@ -32,15 +32,15 @@ export interface WalletState {
 // ゲーム状態（UI表示用）
 export interface GameState {
   userInitialized: boolean;
-  hasFacility: boolean;
+  hasFarmSpace: boolean;
   growPower: number;
   tokenBalance: number;
   lastHarvestTime: number;
   pendingReferralRewards?: number;
-  facility?: {
-    facilitySize: number;
-    maxCapacity: number;
-    machineCount: number;
+  farmSpace?: {
+    level: number;
+    capacity: number;
+    seedCount: number;
     totalGrowPower: number;
   };
 }
@@ -75,11 +75,11 @@ export interface BatchRequest {
 // 詳細なゲーム状態（内部処理用）
 export interface DetailedGameState {
   userState: import('./types/program-types').UserStateAccount | null;
-  facility: import('./types/program-types').FacilityAccount | null;
+  farmSpace: import('./types/program-types').FarmSpaceAccount | null;
   config: import('./types/program-types').ConfigAccount | null;
   tokenBalance: number;
   userInitialized: boolean;
-  hasFacility: boolean;
+  hasFarmSpace: boolean;
   growPower: number;
   pendingReferralRewards: number;
 }

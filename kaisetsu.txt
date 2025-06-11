@@ -1,353 +1,504 @@
-# Solana Facility Game 実装解説
+# WEED Farm Game - 完全仕様書 (kaisetsu.txt)
 
-## 概要
-このプロジェクトは、Solanaブロックチェーン上で動作する施設経営ゲームのMVP（Minimum Viable Product）です。プレイヤーは施設を購入し、時間経過に応じて報酬トークンを獲得できるシンプルなPlay-to-Earnゲームとなっています。
+## 🌾 プログラム概要
 
-## 技術スタック
+**Program ID:** `FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B`
 
-### バックエンド（Solanaプログラム）
-- **Solana**: ブロックチェーンプラットフォーム
-- **Anchor Framework**: Solanaプログラム開発フレームワーク（v0.31.1）
-- **Rust**: プログラム実装言語
-- **SPL Token**: 報酬トークンの実装
+Solana blockchain上で動作する$WEED（大麻）をテーマにした農場シミュレーションゲーム。
+プレイヤーは農場スペースを購入し、様々な種を植えることで$WEEDトークンを獲得する。
+多段階紹介システム、ミステリーシードパック、農場アップグレードシステムを統合した経済ゲーム。
 
-### フロントエンド
-- **Vite**: 高速モダンビルドツール（v5.0.0）
-- **TypeScript**: 型安全な開発言語（v5.0.0）
-- **Bun**: JavaScriptランタイム（パッケージマネージャー）
-- **Vitest**: テストフレームワーク（v1.0.0）
-- **Web3ライブラリ**:
-  - @coral-xyz/anchor (v0.31.1)
-  - @solana/web3.js (v1.87.6)
-  - @solana/spl-token (v0.3.11)
-  - Phantomウォレットアダプター
+---
 
-## プログラム構造
+## 🏗️ アーキテクチャ
 
-### 1. メインプログラム（lib.rs）
-プログラムは11つの主要な命令（instruction）を持っています：
+### コアモジュール構成
+```
+programs/facility-game/src/
+├── lib.rs              # エントリーポイント（21個の命令定義）
+├── state.rs            # 10個のアカウント構造体定義
+├── error.rs            # 28個のカスタムエラー定義
+├── utils.rs            # 計算・検証・ヘルパー関数群
+└── instructions/       # 命令実装の分割モジュール
+    ├── admin.rs        # システム管理機能
+    ├── user.rs         # ユーザー管理
+    ├── farm.rs         # 農場管理
+    ├── rewards.rs      # 報酬・紹介システム
+    ├── transfer.rs     # トークン転送
+    ├── seeds.rs        # シード・パック管理
+    ├── invite.rs       # 招待システム
+    └── meteora.rs      # DEX統合
+```
 
-#### initialize_config
-- **目的**: システム全体の設定を初期化
-- **権限**: 管理者のみ実行可能
-- **パラメータ**:
-  - base_rate: 基本報酬レート
-  - halving_interval: 半減期の間隔（秒単位）
-  - treasury: 手数料収集用トレジャリーアカウント
-- **動作**: グローバル設定を保存し、最初の半減期時刻を設定
+### PDA (Program Derived Address) 設計
+```
+config:              ["config"]
+global_stats:        ["global_stats"]
+user_state:          ["user", user_pubkey]
+farm_space:          ["farm_space", user_pubkey]
+seed:                ["seed", user_pubkey, seed_id]
+seed_storage:        ["seed_storage", user_pubkey]
+seed_pack:           ["seed_pack", user_pubkey, pack_id]
+invite_code:         ["invite_code", code]
+reward_mint:         ["reward_mint"]
+mint_authority:      ["mint_authority"]
+fee_pool:            ["fee_pool"]
+```
 
-#### create_reward_mint
-- **目的**: 報酬として配布するSPLトークンのMintを作成
-- **権限**: 管理者のみ実行可能
-- **動作**: PDAをMint Authorityとして設定し、プログラムのみがトークンを発行できるようにする
+---
 
-#### init_user
-- **目的**: 新規ユーザーのアカウントを初期化
-- **権限**: ユーザー自身が実行
-- **パラメータ**: referrer (Option<Pubkey>) - 招待者のアドレス（オプション）
-- **動作**: ユーザー状態を初期化し、最終収穫時刻を現在時刻に設定、リファラル情報を保存
+## 💰 経済設計
 
-#### buy_facility
-- **目的**: 施設を購入し、初期マシンを配置
-- **権限**: ユーザー自身が実行
-- **制約**: 各ユーザーは1つの施設のみ所有可能
-- **動作**:
-  - 新しい施設アカウントを作成
-  - 初期マシン1台を自動配置（Grow Power: 100）
-  - ユーザー状態を更新
+### トークン仕様
+- **名称:** $WEED
+- **精度:** 6桁（1 WEED = 1,000,000 units）
+- **総供給量:** 10億WEED
+- **用途:** ゲーム内通貨、農場アップグレード、ミステリーパック購入
 
-#### claim_reward
-- **目的**: 蓄積された報酬を請求
-- **権限**: 施設を所有するユーザーのみ実行可能
-- **動作**:
-  1. 半減期をチェックし、必要に応じてbase_rateを更新
-  2. 最終収穫からの経過時間を計算
-  3. 報酬量を計算: (経過時間 × Grow Power × base_rate) / 1000
-  4. SPLトークンをユーザーのトークンアカウントにミント
-  5. 最終収穫時刻を更新
+### 基本経済パラメータ
+```rust
+BASE_RATE: 100 WEED/秒         // 初期報酬レート
+HALVING_INTERVAL: 6日          // 半減期間隔
+FARM_COST: 0.5 SOL            // 農場購入コスト
+SEED_PACK_COST: 300 WEED      // ミステリーパック価格
+TRADING_FEE: 2%               // 取引手数料
+```
 
-#### distribute_referral_reward
-- **目的**: リファラル報酬を累積
-- **権限**: 被招待者が実行
-- **パラメータ**: reward_amount (u64) - 基本報酬額
-- **動作**: 
-  1. リファラル報酬を計算（基本報酬の10%）
-  2. リファラーのpending_referral_rewardsに累積
+### 報酬計算式
+```
+ユーザー報酬 = (ユーザーGrow Power / 全体Grow Power) × 基本レート × 経過時間
+```
 
-#### claim_referral_rewards
-- **目的**: 累積されたリファラル報酬を請求
-- **権限**: リファラー自身が実行
-- **動作**:
-  1. pending_referral_rewardsをチェック
-  2. SPLトークンとして発行
-  3. pending_referral_rewardsをリセット
+### 半減機構
+- 6日ごとに基本レートが半減
+- 複数の半減期をまたぐ期間の報酬は正確に分割計算
+- 長期的な持続可能性を確保
 
-#### upgrade_facility
-- **目的**: 施設サイズをアップグレード
-- **権限**: 施設所有者が実行
-- **動作**:
-  1. アップグレードコストを計算（段階的に増加）
-  2. $WEEDトークンをバーン（破棄）
-  3. 施設サイズとmax_capacityを更新
+---
 
-#### add_machine
-- **目的**: 施設にマシンを追加
-- **権限**: 施設所有者が実行
-- **コスト**: 固定500 $WEED
-- **動作**:
-  1. 容量制限をチェック
-  2. $WEEDトークンをバーン
-  3. マシン数とGrow Powerを増加
+## 🚜 農場システム
 
-#### transfer_with_fee
-- **目的**: 2%手数料付きトークン転送
-- **権限**: トークン所有者が実行
-- **動作**:
-  1. 転送量から2%の手数料を計算
-  2. 手数料をトレジャリーアカウントに送金
-  3. 残り98%を受信者に送金
+### 農場スペース仕様
+| レベル | 容量 | アップグレードコスト | ROI効率 |
+|--------|------|---------------------|---------|
+| 1      | 4    | -                   | -       |
+| 2      | 8    | 3,500 WEED         | 875 WEED/slot |
+| 3      | 12   | 18,000 WEED        | 4,500 WEED/slot |
+| 4      | 16   | 20,000 WEED        | 5,000 WEED/slot |
+| 5      | 20   | 25,000 WEED        | 6,250 WEED/slot |
 
-### 2. 状態管理（state.rs）
+### アップグレードシステム
+- **クールダウン:** 24時間
+- **プロセス:** 
+  1. アップグレード開始（WEEDバーン）
+  2. 24時間待機
+  3. アップグレード完了実行
 
-#### Config（グローバル設定）
+### 初期付与
+- 農場購入時にSeed1を無料付与（100 Grow Power）
+- レベル1農場（容量4）から開始
+
+---
+
+## 🌱 シードシステム
+
+### シード種類と確率
+| シード | Grow Power | 出現確率 | 投資効率 |
+|--------|------------|----------|----------|
+| Seed1  | 100        | 42.23%   | -70% ROI |
+| Seed2  | 180        | 24.44%   | -40% ROI |
+| Seed3  | 420        | 13.33%   | +40% ROI |
+| Seed4  | 720        | 8.33%    | +140% ROI |
+| Seed5  | 1,000      | 5.56%    | +233% ROI |
+| Seed6  | 5,000      | 3.33%    | +1567% ROI |
+| Seed7  | 15,000     | 1.33%    | +4900% ROI |
+| Seed8  | 30,000     | 0.89%    | +9900% ROI |
+| Seed9  | 60,000     | 0.56%    | +19900% ROI |
+
+### ミステリーパック
+- **コスト:** 300 WEED（100%バーン）
+- **仕組み:** 購入時にランダムシード設定、開封時に確定
+- **戦略性:** 高リスク・高リターンのギャンブル要素
+
+### シード管理
+- **ストレージ:** ユーザーあたり最大100シード
+- **植え付け:** 農場容量内でのみ可能
+- **取り外し:** いつでも可能（Grow Powerは即座に反映）
+
+---
+
+## 🌐 多段階紹介システム
+
+### 紹介報酬構造
+- **Level 1（直接紹介）:** 10%
+- **Level 2（間接紹介）:** 5%
+- **プロトコル除外:** 特定アドレスは報酬対象外
+
+### 招待コードシステム
+- **コード形式:** 8バイト英数字
+- **初期限度:** ユーザーあたり5人
+- **拡張可能:** 管理者による上限増加
+
+### 報酬分配
+```
+紹介者への報酬 = 被紹介者の獲得報酬 × 紹介レベル別％
+```
+
+---
+
+## 🎯 戦略的ユーザーアーキタイプ
+
+### 1. Network Builder（紹介ネットワーカー）
+```
+特徴: 多段階紹介チェーン構築
+ROI期間: 14-21日
+リスク: 低
+持続可能性: 最高
+最適対象: 社交的プレイヤー
+```
+
+### 2. Gambler（ギャンブル投資家）
+```
+特徴: ミステリーパック集中投資
+ROI期間: 1-7日（運次第）
+リスク: 極高
+結果振幅: -70% ～ +19900%
+最適対象: リスク許容度の高いプレイヤー
+```
+
+### 3. Farmer（農場拡張主義者）
+```
+特徴: 段階的農場アップグレード
+ROI期間: 7-14日
+リスク: 低
+効率: Level1→2が最高（875 WEED/slot）
+最適対象: 保守的プレイヤー
+```
+
+### 4. Strategist（複合戦略家）
+```
+特徴: 動的投資配分
+ROI期間: 10-14日
+フェーズ別配分:
+  - 初期: 招待40% + Mystery20% + Upgrade40%
+  - 中期: 招待20% + Mystery30% + Upgrade50%
+  - 後期: 招待10% + Mystery40% + Upgrade50%
+最適対象: 経験豊富な最適化プレイヤー
+```
+
+---
+
+## ⚡ 重要な意思決定ポイント
+
+### 300 WEED閾値
+```
+選択肢A: ミステリーパック購入（高リスク・高リターン）
+選択肢B: アップグレード資金として貯蓄（確実な進歩）
+最適解: 現在のGrow Powerとリスク許容度に依存
+```
+
+### 3,500 WEED閾値
+```
+選択肢A: Level1→2アップグレード（容量100%増加）
+選択肢B: 11-12個のミステリーパック（潜在的大幅成長）
+最適解: 基盤構築としてアップグレード優先、その後パック
+```
+
+### 紹介ネットワーク規模別戦略
+```
+1-2紹介: 個人成長重視
+3-5紹介: バランス型アプローチ  
+5+紹介: ネットワーク効果活用
+```
+
+---
+
+## 📋 完全命令セット（21個）
+
+### 管理者専用命令
+1. `initialize_config` - システム設定初期化
+2. `create_reward_mint` - $WEEDトークン作成
+3. `initialize_global_stats` - 統計初期化
+4. `initialize_fee_pool` - 手数料プール初期化
+5. `expand_invite_limit` - 招待限度拡張
+6. `update_meteora_config` - DEX設定更新
+7. `convert_fees_to_sol` - 手数料→SOL変換
+
+### ユーザー機能
+8. `init_user` - ユーザー初期化
+9. `buy_farm_space` - 農場スペース購入
+10. `upgrade_farm_space` - 農場アップグレード開始
+11. `complete_farm_space_upgrade` - アップグレード完了
+12. `claim_reward` - 報酬請求
+
+### 紹介システム
+13. `create_invite_code` - 招待コード作成
+14. `use_invite_code` - 招待コード使用
+15. `distribute_referral_reward` - 紹介報酬分配
+16. `distribute_referral_on_claim` - 請求時紹介報酬
+17. `claim_referral_rewards` - 紹介報酬請求
+
+### シード・パックシステム
+18. `initialize_seed_storage` - シードストレージ初期化
+19. `purchase_seed_pack` - ミステリーパック購入
+20. `open_seed_pack` - パック開封
+21. `plant_seed` - シード植え付け
+22. `remove_seed` - シード取り外し
+
+### 取引機能
+23. `transfer_with_fee` - 手数料付き転送
+
+---
+
+## 🏛️ アカウント構造体（10種類）
+
+### 1. Config - グローバル設定
 ```rust
 pub struct Config {
-    pub base_rate: u64,           // 基本報酬レート
-    pub halving_interval: i64,    // 半減期間隔（秒）
-    pub next_halving_time: i64,   // 次回半減期の時刻
-    pub admin: Pubkey,            // 管理者アドレス
-    pub treasury: Pubkey,         // トレジャリーアカウント（手数料収集先）
-    pub reserve: [u8; 32],        // 将来の拡張用
+    pub base_rate: u64,                    // 基本報酬レート
+    pub halving_interval: i64,             // 半減期間隔
+    pub next_halving_time: i64,            // 次回半減期
+    pub admin: Pubkey,                     // 管理者
+    pub treasury: Pubkey,                  // トレジャリー
+    pub seed_pack_cost: u64,               // パックコスト
+    pub seed_counter: u64,                 // シードカウンター
+    pub seed_pack_counter: u64,            // パックカウンター
+    pub farm_space_cost_sol: u64,          // 農場コスト
+    pub max_invite_limit: u8,              // 招待上限
+    pub trading_fee_percentage: u8,        // 取引手数料
+    pub protocol_referral_address: Pubkey, // プロトコルアドレス
+    pub reserve: [u8; 2],                  // 予約
 }
 ```
 
-#### UserState（ユーザー状態）
+### 2. UserState - ユーザー状態
 ```rust
 pub struct UserState {
-    pub owner: Pubkey,                    // ユーザーの公開鍵
-    pub total_grow_power: u64,            // 総Grow Power
-    pub last_harvest_time: i64,           // 最後の収穫時刻
-    pub has_facility: bool,               // 施設所有フラグ
-    pub referrer: Option<Pubkey>,         // 招待者のアドレス（オプション）
-    pub pending_referral_rewards: u64,   // 累積リファラル報酬（未請求）
-    pub reserve: [u8; 55],                // 将来の拡張用
+    pub owner: Pubkey,                   // 所有者
+    pub total_grow_power: u64,           // 総Grow Power
+    pub last_harvest_time: i64,          // 最終収穫時刻
+    pub has_farm_space: bool,            // 農場所有フラグ
+    pub referrer: Option<Pubkey>,        // 紹介者
+    pub pending_referral_rewards: u64,   // 未請求紹介報酬
+    pub reserve: [u8; 32],               // 予約
 }
 ```
 
-#### Facility（施設）
+### 3. FarmSpace - 農場スペース
 ```rust
-pub struct Facility {
-    pub owner: Pubkey,              // 所有者
-    pub facility_size: u32,         // 施設サイズ/レベル
-    pub max_capacity: u32,          // 最大マシン容量
-    pub machine_count: u32,         // 現在のマシン数
-    pub total_grow_power: u64,      // 総Grow Power
-    pub reserve: [u8; 56],          // 将来の拡張用
+pub struct FarmSpace {
+    pub owner: Pubkey,                   // 所有者
+    pub level: u8,                       // レベル（1-5）
+    pub capacity: u8,                    // 最大容量
+    pub seed_count: u8,                  // 現在のシード数
+    pub total_grow_power: u64,           // 総Grow Power
+    pub upgrade_start_time: i64,         // アップグレード開始時刻
+    pub upgrade_target_level: u8,        // 目標レベル
+    pub reserve: [u8; 32],               // 予約
 }
 ```
 
-### 3. アカウント設計（PDA）
-
-Program Derived Address (PDA)を使用して、決定論的なアカウントアドレスを生成：
-
-- **Config PDA**: `["config"]`
-- **UserState PDA**: `["user", user_pubkey]`
-- **Facility PDA**: `["facility", user_pubkey]`
-- **RewardMint PDA**: `["reward_mint"]`
-- **MintAuthority PDA**: `["mint_authority"]`
-
-この設計により、アカウントアドレスを事前に計算でき、アカウントの一意性が保証されます。
-
-## ゲームメカニクス
-
-### 報酬システム
-1. **遅延計算（Lazy Evaluation）**: 報酬は請求時にのみ計算される
-2. **時間ベース**: 最後の収穫からの経過時間に基づいて報酬が蓄積
-3. **線形成長**: 報酬 = (経過時間[秒] × Grow Power × base_rate) / 1000
-4. **トークン仕様**: 
-   - トークン名: Weed Token
-   - シンボル: $WEED
-   - 小数点以下桁数: 6
-   - SPL Token Metadataプログラムによるメタデータ管理
-
-### 半減期メカニズム
-- 設定された間隔（デフォルト1年）ごとにbase_rateが半分になる
-- これにより、初期参加者により多くの報酬を提供し、インフレを抑制
-
-### 制限事項
-- 各ユーザーは1つの施設のみ所有可能（MVP版の制限）
-- 施設購入時に自動的に1台のマシンが配置される
-- マシン追加は施設の容量制限内のみ
-
-### リファラル（招待）システム
-1. **招待機能**: ユーザー初期化時にリファラー（招待者）を指定可能
-2. **報酬分配**: 被招待者が報酬を請求する際、リファラーに10%のボーナス報酬
-3. **累積システム**: リファラル報酬は`pending_referral_rewards`に累積
-4. **請求機能**: リファラーは別途`claim_referral_rewards`で報酬を請求
-
-### 施設サイズ・アップグレードシステム
-1. **階層システム**: 施設サイズは1から段階的にアップグレード可能
-2. **容量拡張**: サイズアップでマシン容量が増加
-   - サイズ1: 1台, サイズ2: 3台, サイズ3: 6台, サイズ4: 10台, サイズ5: 15台
-   - サイズ6以降: 5台ずつ増加
-3. **アップグレードコスト**: $WEEDトークンを消費
-   - サイズ1→2: 1000 $WEED
-   - サイズ2→3: 2500 $WEED
-   - サイズ3→4: 5000 $WEED
-   - サイズ4→5: 10000 $WEED
-   - サイズ6以降: 5000ずつ増加
-4. **マシン追加**: 容量内で追加マシンを購入可能（500 $WEED/台）
-
-### 転送手数料システム
-1. **手数料徴収**: 全ての$WEEDトークン転送時に2%の手数料を自動徴収
-2. **手数料配分**: 徴収された手数料は設定されたトレジャリーアカウントに送金
-3. **透明性**: 受信者は転送額の98%を受け取り、手数料は明示的に分離
-4. **プログラム経由**: 直接のSPLトークン転送ではなく、プログラム経由の転送が必要
-
-## セキュリティ考慮事項
-
-1. **署名検証**: すべてのユーザーアクションには署名が必要
-2. **PDA所有権**: アカウントの所有権はPDAによって保証
-3. **オーバーフロー保護**: checked演算を使用して数値オーバーフローを防止
-4. **アクセス制御**: 管理者機能とユーザー機能を明確に分離
-
-## エラーハンドリング
-
-カスタムエラー定義（error.rs）：
-- `AlreadyHasFacility`: 既に施設を所有している
-- `NoFacility`: 施設を所有していない
-- `NoRewardToClaim`: 請求可能な報酬がない
-- `CalculationOverflow`: 計算オーバーフロー
-
-## テスト戦略
-
-テスト（facility-game.ts）は以下の流れで実装：
-1. システム初期化テスト
-2. 報酬Mint作成テスト
-3. ユーザー初期化テスト
-4. 施設購入テスト
-5. トークンアカウント作成
-6. 報酬請求テスト（時間経過シミュレーション）
-7. エラーケーステスト（重複購入など）
-
-## 将来の拡張性
-
-各アカウント構造体に64バイトの`reserve`フィールドを設けることで、将来的な機能拡張に対応：
-- 複数マシンタイプの実装
-- マシンアップグレードシステム
-- 紹介報酬システム
-- 複数施設所有機能
-
-## デプロイ情報
-
-- **Program ID**: `EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89`
-- **対応ネットワーク**: Localnet, Devnet, Testnet, Mainnet-beta
-- **必要なSOL**: デプロイには約2 SOL必要
-
-## 開発環境
-
-必要なツール：
-- Rust (最新安定版)
-- Solana CLI (v1.17.0以上)
-- Anchor CLI (v0.31.1)
-- Node.js (v16以上)
-- Yarn
-
-## フロントエンド実装
-
-### アーキテクチャ
-
-#### サービス指向アーキテクチャ
-- **SolanaService**: ブロックチェーンとの全ての対話を管理
-- **AnchorClient**: Anchorプログラム呼び出しのラッパー
-- **FacilityGameApp**: アプリケーション全体の状態管理（シングルトン）
-
-#### ヘルパー/ユーティリティ
-- **PDAHelper**: PDAアドレス計算の集約
-- **Logger**: 中央集権的なログ管理システム
-- **ErrorHandler**: ユーザーフレンドリーなエラー処理
-- **Constants**: 定数の集約管理
-
-### 主要機能
-
-#### 1. ウォレット連携
-- Phantomウォレットとの統合
-- ウォレット状態の管理（アドレス、残高表示）
-- トランザクション後の自動残高更新
-
-#### 2. ゲームアクション
-- ユーザー初期化 (`initUser`)
-- 施設購入 (`buyFacility`)
-- 報酬請求 (`claimRewards`)
-- 開発用SOLエアドロップ機能
-
-#### 3. リアルタイム監視
-- RPC接続状態の表示
-- ネットワーク情報（ブロック高さ、スロット）
-- ゲーム状態の追跡:
-  - ユーザーステータス
-  - 施設所有状況
-  - Grow Power
-  - トークン残高
-- トランザクションログシステム
-
-#### 4. UI/UXの特徴
-- バニラJavaScript/TypeScriptによる実装（フレームワーク不使用）
-- 日本語インターフェース
-- グラデーション背景とカードベースのレイアウト
-- ローディング状態の表示
-- 成功/エラーメッセージの自動消去
-- ステータスインジケーター（接続/切断/ローディング）
-
-### セキュリティとエラー処理
-
-#### フロントエンドセキュリティ
-- 環境変数による設定管理
-- RPCエンドポイントの外部化
-- ウォレット署名による全トランザクション認証
-
-#### エラーハンドリング
-- ユーザーフレンドリーなエラーメッセージ
-- 資金不足の特別処理
-- 接続エラーからの回復機能
-- 詳細なログ出力（開発者向け）
-
-### 開発者向け機能
-- 包括的なログシステムとUI表示
-- windowオブジェクトへのデバッグ関数公開
-- ローカルバリデータサポート
-- 環境変数による設定切り替え
-
-### テスト環境
-- Vitestによるユニットテスト
-- UIモードサポート
-- モックセットアップ完備
-- 主要コンポーネントのテストカバレッジ
-
-## デプロイと実行
-
-### フロントエンド起動手順
-```bash
-cd frontend
-bun install  # 依存関係のインストール
-bun run dev  # 開発サーバー起動（http://localhost:5173）
+### 4. Seed - シード
+```rust
+pub struct Seed {
+    pub owner: Pubkey,                   // 所有者
+    pub seed_type: SeedType,             // シード種類
+    pub grow_power: u64,                 // Grow Power
+    pub is_planted: bool,                // 植え付けフラグ
+    pub planted_farm_space: Option<Pubkey>, // 植え付け先
+    pub created_at: i64,                 // 作成時刻
+    pub seed_id: u64,                    // ユニークID
+    pub reserve: [u8; 32],               // 予約
+}
 ```
 
-### ビルドとデプロイ
-```bash
-bun run build     # プロダクションビルド
-bun run preview   # ビルドのプレビュー
+### 5. SeedPack - シードパック
+```rust
+pub struct SeedPack {
+    pub purchaser: Pubkey,               // 購入者
+    pub purchased_at: i64,               // 購入時刻
+    pub cost_paid: u64,                  // 支払い額
+    pub is_opened: bool,                 // 開封フラグ
+    pub random_seed: u64,                // ランダムシード
+    pub pack_id: u64,                    // パックID
+    pub reserve: [u8; 32],               // 予約
+}
 ```
 
-### 開発コマンド
-```bash
-bun run lint      # ESLintチェック
-bun run lint:fix  # ESLint自動修正
-bun run format    # Prettierフォーマット
-bun run test      # テスト実行
-bun run test:ui   # UIモードでテスト
+### 6. InviteCode - 招待コード
+```rust
+pub struct InviteCode {
+    pub inviter: Pubkey,                 // 招待者
+    pub invites_used: u8,                // 使用済み数
+    pub invite_limit: u8,                // 招待上限
+    pub code: [u8; 8],                   // コード
+    pub created_at: i64,                 // 作成時刻
+    pub reserve: [u8; 32],               // 予約
+}
 ```
 
-## まとめ
+### 7. GlobalStats - グローバル統計
+```rust
+pub struct GlobalStats {
+    pub total_grow_power: u64,           // 総Grow Power
+    pub total_farm_spaces: u64,          // 総農場数
+    pub total_supply: u64,               // 総供給量
+    pub current_rewards_per_second: u64, // 現在の秒間報酬
+    pub last_update_time: i64,           // 最終更新時刻
+    pub reserve: [u8; 32],               // 予約
+}
+```
 
-このプロジェクトは、Solanaブロックチェーン上でのゲーム開発の基礎を示すMVPです。バックエンドはAnchorフレームワークを活用した安全で効率的な実装、フロントエンドはモダンなTypeScript開発環境とシンプルなバニラJSによるUI実装を特徴としています。シンプルながら拡張可能な設計により、将来的により複雑なゲームメカニクスを追加することが可能です。
+### 8. FeePool - 手数料プール
+```rust
+pub struct FeePool {
+    pub accumulated_fees: u64,           // 蓄積手数料
+    pub treasury_address: Pubkey,        // トレジャリーアドレス
+    pub last_collection_time: i64,       // 最終徴収時刻
+    pub reserve: [u8; 48],               // 予約
+}
+```
+
+### 9. SeedStorage - シードストレージ
+```rust
+pub struct SeedStorage {
+    pub owner: Pubkey,                   // 所有者
+    pub seed_ids: Vec<u64>,              // シードID配列
+    pub total_seeds: u16,                // 総シード数
+    pub reserve: [u8; 32],               // 予約
+}
+```
+
+### 10. RewardAccount - 報酬アカウント
+```rust
+pub struct RewardAccount {
+    pub user: Pubkey,                    // ユーザー
+    pub claimable_amount: u64,           // 請求可能額
+    pub last_harvest_time: i64,          // 最終収穫時刻
+    pub referral_rewards_l1: u64,        // L1紹介報酬
+    pub referral_rewards_l2: u64,        // L2紹介報酬
+    pub reserve: [u8; 32],               // 予約
+}
+```
+
+---
+
+## 🛠️ ユーティリティ機能
+
+### 計算関数
+- `calculate_reward` - 基本報酬計算
+- `calculate_user_share_of_global_rewards` - ユーザーシェア計算
+- `calculate_user_rewards_across_halving` - 半減期跨ぎ報酬計算
+- `calculate_referral_rewards` - 紹介報酬計算（L1: 10%, L2: 5%）
+- `calculate_transfer_fee` - 転送手数料計算（2%）
+
+### 検証関数
+- `validate_user_ownership` - ユーザー所有権検証
+- `validate_token_balance` - トークン残高検証
+- `validate_farm_space_capacity` - 農場容量検証
+- `validate_has_grow_power` - Grow Power検証
+
+### ヘルパー関数
+- `mint_tokens_to_user` - ユーザーへのトークンミント
+- `transfer_tokens_with_cpi` - CPI経由トークン転送
+- `generate_seed_pack_random` - パック用ランダム生成
+- `determine_seed_type_from_random` - ランダム値からシード種類決定
+
+---
+
+## 🔒 セキュリティ機能
+
+### アクセス制御
+- 全ユーザーアクションに署名要求
+- 管理者機能の明確な分離
+- PDAによる決定論的アドレス生成
+
+### 計算保護
+- checked演算によるオーバーフロー防止
+- 128bit演算による中間計算の精度保証
+- 分母ゼロチェック
+
+### 状態保護
+- アカウント初期化済みチェック
+- 容量制限の厳格な検証
+- 重複操作の防止
+
+---
+
+## 🚀 高度な機能
+
+### Meteora DEX統合
+- 蓄積された取引手数料の自動SOL変換
+- プール設定の動的更新機能
+- 流動性プールとの相互運用
+
+### 動的経済システム
+- グローバル統計によるリアルタイム調整
+- 半減期による長期インフレ制御
+- ユーザー行動に基づく報酬分配
+
+### 拡張可能設計
+- 全アカウントに予約領域確保
+- モジュラー命令実装
+- 段階的機能追加対応
+
+---
+
+## 📊 メタ戦略洞察
+
+### ゲーム理論的分析
+```
+早期採用者優位: 半減機構により初期参入者が有利
+ネットワーク効果: 紹介システムによる指数的成長
+リスク分散: 複数戦略の組み合わせが最適
+適応性: ゲーム状態変化への戦略調整が重要
+```
+
+### 長期成功要因
+```
+🎯 多段階紹介チェーンの構築（2+レベル）
+🎯 ミステリーパック投資（Seed3+で収益性確保）
+🎯 アップグレードタイミング（クールダウン同期）
+🎯 再投資による複利効果の活用
+```
+
+---
+
+## 🎮 ゲームプレイフロー
+
+### 1. 初期参入
+```
+1. ユーザー初期化（紹介者設定可能）
+2. 0.5 SOLで農場スペース購入
+3. 初期Seed1（100 Grow Power）付与
+4. 報酬蓄積開始
+```
+
+### 2. 成長期
+```
+1. 定期的な報酬請求
+2. 300 WEED閾値での戦略選択
+3. 紹介活動開始
+4. 3,500 WEED でのアップグレード検討
+```
+
+### 3. 拡張期
+```
+1. Level2農場への移行（容量倍増）
+2. ミステリーパック投資の本格化
+3. 多段階紹介ネットワーク構築
+4. 高レベルアップグレード計画
+```
+
+### 4. 最適化期
+```
+1. 動的投資配分の実行
+2. 市場状況に応じた戦略調整
+3. DEX機能の活用
+4. 持続的成長の維持
+```
+
+---
+
+このWEED Farm Gameは、Solana上で最も高度で戦略的な農場シミュレーションゲームの一つであり、
+DeFi要素、ゲーミフィケーション、ソーシャル機能を完璧に統合した革新的な経済エコシステムです。

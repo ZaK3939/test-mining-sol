@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Transfer, Token, TokenAccount, Mint};
 use crate::state::*;
-use crate::error::*;
+use crate::utils::*;
 
 /// Context for transferring tokens with fee
 #[derive(Accounts)]
@@ -46,50 +46,49 @@ pub struct TransferWithFee<'info> {
 
 /// Transfer tokens with 2% fee
 pub fn transfer_with_fee(ctx: Context<TransferWithFee>, amount: u64) -> Result<()> {
-    // 手数料を計算（2%）
-    let fee_amount = amount
-        .checked_mul(2)
-        .and_then(|result| result.checked_div(100))
-        .ok_or(GameError::CalculationOverflow)?;
-        
-    // 受信者が受け取る実際の金額（98%）
-    let transfer_amount = amount
-        .checked_sub(fee_amount)
-        .ok_or(GameError::CalculationOverflow)?;
+    // Validate sender has sufficient balance
+    validate_token_balance(&ctx.accounts.from_token_account, amount)?;
     
-    // 送信者の残高をチェック
-    require!(
-        ctx.accounts.from_token_account.amount >= amount,
-        GameError::InsufficientFunds
-    );
+    // Calculate fee and transfer amounts using utility function
+    let (fee_amount, transfer_amount) = calculate_transfer_fee(amount)?;
     
-    // 1. 手数料をトレジャリーに転送
+    // Transfer fee to treasury
     if fee_amount > 0 {
-        let fee_transfer_accounts = Transfer {
-            from: ctx.accounts.from_token_account.to_account_info(),
-            to: ctx.accounts.treasury_token_account.to_account_info(),
-            authority: ctx.accounts.from.to_account_info(),
-        };
-        
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-        let cpi_ctx = CpiContext::new(cpi_program, fee_transfer_accounts);
-        token::transfer(cpi_ctx, fee_amount)?;
+        transfer_fee_to_treasury(&ctx, fee_amount)?;
     }
     
-    // 2. 残りの金額を受信者に転送
+    // Transfer remaining amount to recipient
     if transfer_amount > 0 {
-        let main_transfer_accounts = Transfer {
-            from: ctx.accounts.from_token_account.to_account_info(),
-            to: ctx.accounts.to_token_account.to_account_info(),
-            authority: ctx.accounts.from.to_account_info(),
-        };
-        
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-        let cpi_ctx = CpiContext::new(cpi_program, main_transfer_accounts);
-        token::transfer(cpi_ctx, transfer_amount)?;
+        transfer_to_recipient(&ctx, transfer_amount)?;
     }
     
     msg!("Transfer completed: {} total, {} fee (2%), {} to recipient from: {} to: {}", 
          amount, fee_amount, transfer_amount, ctx.accounts.from.key(), ctx.accounts.to_token_account.owner);
     Ok(())
+}
+
+/// Transfer fee to treasury
+fn transfer_fee_to_treasury(ctx: &Context<TransferWithFee>, fee_amount: u64) -> Result<()> {
+    let fee_transfer_accounts = Transfer {
+        from: ctx.accounts.from_token_account.to_account_info(),
+        to: ctx.accounts.treasury_token_account.to_account_info(),
+        authority: ctx.accounts.from.to_account_info(),
+    };
+    
+    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_ctx = CpiContext::new(cpi_program, fee_transfer_accounts);
+    token::transfer(cpi_ctx, fee_amount)
+}
+
+/// Transfer amount to recipient
+fn transfer_to_recipient(ctx: &Context<TransferWithFee>, transfer_amount: u64) -> Result<()> {
+    let main_transfer_accounts = Transfer {
+        from: ctx.accounts.from_token_account.to_account_info(),
+        to: ctx.accounts.to_token_account.to_account_info(),
+        authority: ctx.accounts.from.to_account_info(),
+    };
+    
+    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_ctx = CpiContext::new(cpi_program, main_transfer_accounts);
+    token::transfer(cpi_ctx, transfer_amount)
 }

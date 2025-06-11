@@ -2,7 +2,7 @@
 
 import { PublicKey } from '@solana/web3.js';
 import type { PDAs } from './pda-helper';
-import type { ConfigAccount, UserStateAccount, FacilityAccount } from '../types/program-types';
+import type { ConfigAccount, UserStateAccount, FarmSpaceAccount } from '../types/program-types';
 
 interface CacheEntry<T> {
   data: T;
@@ -14,7 +14,7 @@ interface CacheData {
   pdas: Map<string, CacheEntry<PDAs>>;
   configs: Map<string, CacheEntry<ConfigAccount>>;
   userStates: Map<string, CacheEntry<UserStateAccount>>;
-  facilities: Map<string, CacheEntry<FacilityAccount>>;
+  farmSpaces: Map<string, CacheEntry<FarmSpaceAccount>>;
 }
 
 export class CacheManager {
@@ -22,14 +22,14 @@ export class CacheManager {
   private readonly DEFAULT_TTL = 30000; // 30 seconds
   private readonly CONFIG_TTL = 300000; // 5 minutes for config (rarely changes)
   private readonly USER_STATE_TTL = 15000; // 15 seconds for user state
-  private readonly FACILITY_TTL = 20000; // 20 seconds for facility
+  private readonly FARM_SPACE_TTL = 20000; // 20 seconds for farm space
 
   constructor() {
     this.cache = {
       pdas: new Map(),
       configs: new Map(),
       userStates: new Map(),
-      facilities: new Map(),
+      farmSpaces: new Map(),
     };
 
     // Periodic cleanup of expired entries
@@ -49,14 +49,14 @@ export class CacheManager {
   getCachedPDAs(userPublicKey: PublicKey): PDAs | null {
     const key = userPublicKey.toString();
     const entry = this.cache.pdas.get(key);
-    
+
     if (!entry) return null;
-    
+
     if (this.isExpired(entry)) {
       this.cache.pdas.delete(key);
       return null;
     }
-    
+
     return entry.data;
   }
 
@@ -73,14 +73,14 @@ export class CacheManager {
   getCachedConfig(programId: PublicKey): ConfigAccount | null {
     const key = programId.toString();
     const entry = this.cache.configs.get(key);
-    
+
     if (!entry) return null;
-    
+
     if (this.isExpired(entry)) {
       this.cache.configs.delete(key);
       return null;
     }
-    
+
     return entry.data;
   }
 
@@ -97,38 +97,38 @@ export class CacheManager {
   getCachedUserState(userPublicKey: PublicKey): UserStateAccount | null {
     const key = userPublicKey.toString();
     const entry = this.cache.userStates.get(key);
-    
+
     if (!entry) return null;
-    
+
     if (this.isExpired(entry)) {
       this.cache.userStates.delete(key);
       return null;
     }
-    
+
     return entry.data;
   }
 
-  // Facility Cache
-  cacheFacility(userPublicKey: PublicKey, facility: FacilityAccount): void {
+  // Farm Space Cache
+  cacheFarmSpace(userPublicKey: PublicKey, farmSpace: FarmSpaceAccount): void {
     const key = userPublicKey.toString();
-    this.cache.facilities.set(key, {
-      data: facility,
+    this.cache.farmSpaces.set(key, {
+      data: farmSpace,
       timestamp: Date.now(),
-      ttl: this.FACILITY_TTL,
+      ttl: this.FARM_SPACE_TTL,
     });
   }
 
-  getCachedFacility(userPublicKey: PublicKey): FacilityAccount | null {
+  getCachedFarmSpace(userPublicKey: PublicKey): FarmSpaceAccount | null {
     const key = userPublicKey.toString();
-    const entry = this.cache.facilities.get(key);
-    
+    const entry = this.cache.farmSpaces.get(key);
+
     if (!entry) return null;
-    
+
     if (this.isExpired(entry)) {
-      this.cache.facilities.delete(key);
+      this.cache.farmSpaces.delete(key);
       return null;
     }
-    
+
     return entry.data;
   }
 
@@ -136,14 +136,14 @@ export class CacheManager {
   invalidateUserCache(userPublicKey: PublicKey): void {
     const key = userPublicKey.toString();
     this.cache.userStates.delete(key);
-    this.cache.facilities.delete(key);
+    this.cache.farmSpaces.delete(key);
   }
 
   invalidateAllCache(): void {
     this.cache.pdas.clear();
     this.cache.configs.clear();
     this.cache.userStates.clear();
-    this.cache.facilities.clear();
+    this.cache.farmSpaces.clear();
   }
 
   // Utility methods
@@ -153,32 +153,32 @@ export class CacheManager {
 
   private cleanup(): void {
     const now = Date.now();
-    
+
     // Clean PDAs
     for (const [key, entry] of this.cache.pdas.entries()) {
       if (now - entry.timestamp > entry.ttl) {
         this.cache.pdas.delete(key);
       }
     }
-    
+
     // Clean configs
     for (const [key, entry] of this.cache.configs.entries()) {
       if (now - entry.timestamp > entry.ttl) {
         this.cache.configs.delete(key);
       }
     }
-    
+
     // Clean user states
     for (const [key, entry] of this.cache.userStates.entries()) {
       if (now - entry.timestamp > entry.ttl) {
         this.cache.userStates.delete(key);
       }
     }
-    
-    // Clean facilities
-    for (const [key, entry] of this.cache.facilities.entries()) {
+
+    // Clean farm spaces
+    for (const [key, entry] of this.cache.farmSpaces.entries()) {
       if (now - entry.timestamp > entry.ttl) {
-        this.cache.facilities.delete(key);
+        this.cache.farmSpaces.delete(key);
       }
     }
   }
@@ -188,19 +188,19 @@ export class CacheManager {
     pdas: number;
     configs: number;
     userStates: number;
-    facilities: number;
+    farmSpaces: number;
     totalMemoryEntries: number;
   } {
     return {
       pdas: this.cache.pdas.size,
       configs: this.cache.configs.size,
       userStates: this.cache.userStates.size,
-      facilities: this.cache.facilities.size,
-      totalMemoryEntries: 
-        this.cache.pdas.size + 
-        this.cache.configs.size + 
-        this.cache.userStates.size + 
-        this.cache.facilities.size,
+      farmSpaces: this.cache.farmSpaces.size,
+      totalMemoryEntries:
+        this.cache.pdas.size +
+        this.cache.configs.size +
+        this.cache.userStates.size +
+        this.cache.farmSpaces.size,
     };
   }
 }

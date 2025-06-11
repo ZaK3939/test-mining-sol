@@ -1,62 +1,77 @@
 use anchor_lang::prelude::*;
 
-/// Global configuration account
+/// Global system configuration
+/// Stores all game parameters and admin settings
 #[account]
 pub struct Config {
-    /// Base reward rate
+    /// Base reward rate in tokens per second (default: 100 WEED/sec)
     pub base_rate: u64,
-    /// Halving interval (seconds)
+    /// Halving mechanism interval in seconds (default: 6 days)
     pub halving_interval: i64,
-    /// Next halving timestamp
+    /// Next scheduled halving timestamp
     pub next_halving_time: i64,
-    /// Admin address
+    /// System administrator public key
     pub admin: Pubkey,
-    /// Treasury account for fee collection
+    /// Treasury wallet for fee collection and SOL payments
     pub treasury: Pubkey,
-    /// Mystery box cost in $WEED tokens
-    pub mystery_box_cost: u64,
-    /// Global seed counter
+    /// Mystery seed pack cost in base token units (300 WEED)
+    pub seed_pack_cost: u64,
+    /// Global seed counter for unique seed IDs
     pub seed_counter: u64,
-    /// Global mystery box counter
-    pub mystery_box_counter: u64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 8], // Reduced for new fields
+    /// Global seed pack counter for unique pack IDs
+    pub seed_pack_counter: u64,
+    /// Farm space purchase cost in lamports (0.5 SOL)
+    pub farm_space_cost_sol: u64,
+    /// Maximum allowed invites per user (default: 5)
+    pub max_invite_limit: u8,
+    /// Trading fee as percentage (default: 2%)
+    pub trading_fee_percentage: u8,
+    /// Protocol address that doesn't receive referral rewards
+    pub protocol_referral_address: Pubkey,
+    /// Reserved bytes for future upgrades
+    pub reserve: [u8; 2],
 }
 
-/// User state account
+/// Individual user account state
+/// Tracks user progress and referral relationships
 #[account]
 pub struct UserState {
-    /// User's public key
+    /// User's wallet public key
     pub owner: Pubkey,
-    /// Total Grow Power
+    /// Sum of all grow power from user's planted seeds
     pub total_grow_power: u64,
-    /// Last harvest timestamp
+    /// Timestamp of last reward claim
     pub last_harvest_time: i64,
-    /// Whether the user has a facility
-    pub has_facility: bool,
-    /// Referrer (inviter) public key - can be None for users without referrer
+    /// Farm space ownership flag
+    pub has_farm_space: bool,
+    /// Optional referrer for multi-level referral system
     pub referrer: Option<Pubkey>,
-    /// Accumulated referral rewards (unclaimed)
+    /// Unclaimed referral commission tokens
     pub pending_referral_rewards: u64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 55], // Reduced for referrer option and pending_referral_rewards
+    /// Reserved bytes for future features
+    pub reserve: [u8; 32],
 }
 
-/// Facility account
+/// Farm space account for seed cultivation
+/// Manages capacity, upgrades, and seed placement
 #[account]
-pub struct Facility {
-    /// Facility owner
+pub struct FarmSpace {
+    /// Farm space owner's public key
     pub owner: Pubkey,
-    /// Current facility size/level (determines capacity)
-    pub facility_size: u32,
-    /// Maximum machine capacity based on facility size
-    pub max_capacity: u32,
-    /// Machine count (cannot exceed max_capacity)
-    pub machine_count: u32,
-    /// Total Grow Power
+    /// Current level (1-5, affects capacity)
+    pub level: u8,
+    /// Maximum seeds that can be planted at current level
+    pub capacity: u8,
+    /// Number of seeds currently planted
+    pub seed_count: u8,
+    /// Combined grow power of all planted seeds
     pub total_grow_power: u64,
-    /// Reserved for future expansion (multiple machine types, etc.)
-    pub reserve: [u8; 56], // Reduced for new fields
+    /// Upgrade initiation timestamp (0 = not upgrading)
+    pub upgrade_start_time: i64,
+    /// Level to reach after 24h cooldown
+    pub upgrade_target_level: u8,
+    /// Reserved bytes for future expansion
+    pub reserve: [u8; 32],
 }
 
 impl Config {
@@ -66,10 +81,23 @@ impl Config {
         8 + // next_halving_time
         32 + // admin
         32 + // treasury
-        8 + // mystery_box_cost
+        8 + // seed_pack_cost
         8 + // seed_counter
-        8 + // mystery_box_counter
-        8; // reserve
+        8 + // seed_pack_counter
+        8 + // farm_space_cost_sol
+        1 + // max_invite_limit
+        1 + // trading_fee_percentage
+        32 + // protocol_referral_address
+        2; // reserve
+        
+    /// Default farm space cost (0.5 SOL in lamports)
+    pub const DEFAULT_FARM_SPACE_COST: u64 = 500_000_000; // 0.5 SOL
+    
+    /// Default base rate (100 WEED per second)
+    pub const DEFAULT_BASE_RATE: u64 = 100;
+    
+    /// Default halving interval (6 days in seconds)
+    pub const DEFAULT_HALVING_INTERVAL: i64 = 6 * 24 * 60 * 60;
 }
 
 impl UserState {
@@ -77,93 +105,134 @@ impl UserState {
         32 + // owner
         8 + // total_grow_power
         8 + // last_harvest_time
-        1 + // has_facility
+        1 + // has_farm_space
         1 + 32 + // referrer (Option<Pubkey>: 1 byte discriminator + 32 bytes for Some(Pubkey))
         8 + // pending_referral_rewards
-        55; // reserve
+        32; // reserve
 }
 
-impl Facility {
+impl FarmSpace {
     pub const LEN: usize = 8 + // discriminator
         32 + // owner
-        4 + // facility_size
-        4 + // max_capacity
-        4 + // machine_count
+        1 + // level
+        1 + // capacity
+        1 + // seed_count
         8 + // total_grow_power
-        56; // reserve
+        8 + // upgrade_start_time
+        1 + // upgrade_target_level
+        32; // reserve
+    
+    /// Upgrade cooldown duration (24 hours in seconds)
+    pub const UPGRADE_COOLDOWN: i64 = 24 * 60 * 60;
         
-    /// Calculate maximum capacity based on facility size
-    /// 施設サイズに基づいてマシン容量を計算
-    /// サイズ1: 1台, サイズ2: 3台, サイズ3: 6台, サイズ4: 10台...
-    pub fn calculate_max_capacity(facility_size: u32) -> u32 {
-        match facility_size {
-            1 => 1,
-            2 => 3,
-            3 => 6,
-            4 => 10,
-            5 => 15,
-            _ => 15 + (facility_size - 5) * 5, // サイズ6以降は5台ずつ増加
+    /// Get capacity for a given level
+    pub fn get_capacity_for_level(level: u8) -> u8 {
+        match level {
+            1 => 4,
+            2 => 8,
+            3 => 12,
+            4 => 16,
+            5 => 20,
+            _ => 20, // Maximum capacity
         }
     }
     
-    /// Calculate upgrade cost for next facility size level
-    /// 次のレベルのアップグレードコストを計算
-    pub fn calculate_upgrade_cost(current_size: u32) -> u64 {
-        let next_size = current_size + 1;
-        match next_size {
-            2 => 1000,   // サイズ1→2: 1000 $WEED
-            3 => 2500,   // サイズ2→3: 2500 $WEED
-            4 => 5000,   // サイズ3→4: 5000 $WEED
-            5 => 10000,  // サイズ4→5: 10000 $WEED
-            _ => 10000 + (next_size as u64 - 5) * 5000, // サイズ6以降は5000ずつ増加
-        }
-    }
-}
-
-/// Seed rarity levels
-#[derive(Clone, Copy, PartialEq, Eq, AnchorSerialize, AnchorDeserialize)]
-pub enum SeedRarity {
-    Common,    // 70% - 1x multiplier
-    Rare,      // 20% - 1.5x multiplier  
-    Epic,      // 8% - 2x multiplier
-    Legendary, // 2% - 3x multiplier
-}
-
-impl SeedRarity {
-    /// Get grow power multiplier for this rarity
-    pub fn get_multiplier(&self) -> u64 {
-        match self {
-            SeedRarity::Common => 100,    // 1x (100%)
-            SeedRarity::Rare => 150,      // 1.5x (150%)
-            SeedRarity::Epic => 200,      // 2x (200%) 
-            SeedRarity::Legendary => 300, // 3x (300%)
+    /// Get upgrade cost for next level
+    pub fn get_upgrade_cost(current_level: u8) -> Option<u64> {
+        match current_level {
+            1 => Some(3500),   // Level 1→2: 3500 $WEED
+            2 => Some(18000),  // Level 2→3: 18000 $WEED
+            3 => Some(20000),  // Level 3→4: 20000 $WEED
+            4 => Some(25000),  // Level 4→5: 25000 $WEED
+            _ => None,         // No upgrade available
         }
     }
     
-    /// Get rarity name as string
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SeedRarity::Common => "Common",
-            SeedRarity::Rare => "Rare",
-            SeedRarity::Epic => "Epic",
-            SeedRarity::Legendary => "Legendary",
+    /// Check if upgrade is complete
+    pub fn is_upgrade_complete(&self, current_time: i64) -> bool {
+        if self.upgrade_start_time == 0 {
+            return false;
         }
+        current_time >= self.upgrade_start_time + Self::UPGRADE_COOLDOWN
     }
 }
 
-/// Seed NFT account
+/// Seed types with fixed grow power and probabilities
+#[derive(Clone, Copy, PartialEq, Eq, AnchorSerialize, AnchorDeserialize, Debug)]
+pub enum SeedType {
+    Seed1,      // Grow Power: 100 - 42.23%
+    Seed2,      // Grow Power: 180 - 24.44%
+    Seed3,      // Grow Power: 420 - 13.33%
+    Seed4,      // Grow Power: 720 - 8.33%
+    Seed5,      // Grow Power: 1000 - 5.56%
+    Seed6,      // Grow Power: 5000 - 3.33%
+    Seed7,      // Grow Power: 15000 - 1.33%
+    Seed8,      // Grow Power: 30000 - 0.89%
+    Seed9,      // Grow Power: 60000 - 0.56%
+}
+
+impl SeedType {
+    /// Optimized lookup table for grow power values
+    const GROW_POWERS: [u64; 9] = [100, 180, 420, 720, 1000, 5000, 15000, 30000, 60000];
+    
+    /// Cumulative probability thresholds for weighted random selection
+    /// Values out of 10000 for precise percentage control
+    const PROBABILITY_THRESHOLDS: [u16; 9] = [4222, 6666, 7999, 8832, 9388, 9721, 9854, 9943, 10000];
+    
+    /// Get grow power efficiently using array lookup
+    pub fn get_grow_power(&self) -> u64 {
+        Self::GROW_POWERS[*self as usize]
+    }
+    
+    /// Convert random value to seed type using weighted probabilities
+    /// Uses linear search for small array - more efficient than binary search for 9 elements
+    pub fn from_random(random: u64) -> Self {
+        let value = (random % 10000) as u16;
+        
+        for (i, &threshold) in Self::PROBABILITY_THRESHOLDS.iter().enumerate() {
+            if value < threshold {
+                return unsafe { std::mem::transmute(i as u8) };
+            }
+        }
+        
+        // Fallback to highest rarity (should never happen with proper thresholds)
+        SeedType::Seed9
+    }
+    
+    /// Iterator-friendly array of all seed types
+    pub const fn all_types() -> [SeedType; 9] {
+        [
+            SeedType::Seed1, SeedType::Seed2, SeedType::Seed3,
+            SeedType::Seed4, SeedType::Seed5, SeedType::Seed6,
+            SeedType::Seed7, SeedType::Seed8, SeedType::Seed9,
+        ]
+    }
+    
+    /// Get display probability as percentage (for UI/documentation)
+    pub fn get_probability_percent(&self) -> f32 {
+        const PROBABILITIES: [f32; 9] = [42.23, 24.44, 13.33, 8.33, 5.56, 3.33, 1.33, 0.89, 0.56];
+        PROBABILITIES[*self as usize]
+    }
+    
+    /// Validate seed type enum value
+    pub fn is_valid(value: u8) -> bool {
+        value < 9
+    }
+}
+
+/// Seed account (stored in user's storage)
 #[account]
 pub struct Seed {
     /// Seed owner
     pub owner: Pubkey,
-    /// Seed rarity level
-    pub rarity: SeedRarity,
-    /// Grow power multiplier (based on rarity)
-    pub grow_power_multiplier: u64,
-    /// Whether this seed is currently planted in a facility
+    /// Seed type (determines grow power)
+    pub seed_type: SeedType,
+    /// Grow power of this seed
+    pub grow_power: u64,
+    /// Whether this seed is currently planted in farm space
     pub is_planted: bool,
-    /// Facility where this seed is planted (if any)
-    pub planted_facility: Option<Pubkey>,
+    /// Farm space where this seed is planted (if any)
+    pub planted_farm_space: Option<Pubkey>,
     /// Creation timestamp
     pub created_at: i64,
     /// Unique seed ID
@@ -172,21 +241,21 @@ pub struct Seed {
     pub reserve: [u8; 32],
 }
 
-/// Mystery Box purchase tracker
+/// Seed Pack purchase tracker
 #[account]
-pub struct MysteryBox {
+pub struct SeedPack {
     /// Purchaser
     pub purchaser: Pubkey,
     /// Purchase timestamp
     pub purchased_at: i64,
-    /// Box cost paid
+    /// Pack cost paid
     pub cost_paid: u64,
-    /// Whether box has been opened
+    /// Whether pack has been opened
     pub is_opened: bool,
     /// Random seed for opening (set when purchased)
     pub random_seed: u64,
-    /// Box ID
-    pub box_id: u64,
+    /// Pack ID
+    pub pack_id: u64,
     /// Reserved for future expansion
     pub reserve: [u8; 32],
 }
@@ -194,22 +263,177 @@ pub struct MysteryBox {
 impl Seed {
     pub const LEN: usize = 8 + // discriminator
         32 + // owner
-        1 + // rarity (enum)
-        8 + // grow_power_multiplier
+        1 + // seed_type (enum)
+        8 + // grow_power
         1 + // is_planted
-        1 + 32 + // planted_facility (Option<Pubkey>)
+        1 + 32 + // planted_farm_space (Option<Pubkey>)
         8 + // created_at
         8 + // seed_id
         32; // reserve
 }
 
-impl MysteryBox {
+impl SeedPack {
     pub const LEN: usize = 8 + // discriminator
         32 + // purchaser
         8 + // purchased_at
         8 + // cost_paid
         1 + // is_opened
         8 + // random_seed
-        8 + // box_id
+        8 + // pack_id
+        32; // reserve
+}
+
+/// Invite code management PDA
+#[account]
+pub struct InviteCode {
+    /// Invite code creator (user who can invite others)
+    pub inviter: Pubkey,
+    /// Current number of people invited
+    pub invites_used: u8,
+    /// Maximum invite limit for this user
+    pub invite_limit: u8,
+    /// Invite code string (8 characters)
+    pub code: [u8; 8],
+    /// Creation timestamp
+    pub created_at: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+/// Global statistics PDA
+#[account]
+pub struct GlobalStats {
+    /// Total grow power across all users
+    pub total_grow_power: u64,
+    /// Total number of active farm spaces
+    pub total_farm_spaces: u64,
+    /// Total $WEED supply (1 billion)
+    pub total_supply: u64,
+    /// Current rewards per second (decreases with halving)
+    pub current_rewards_per_second: u64,
+    /// Last update timestamp
+    pub last_update_time: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+/// Fee collection pool PDA
+#[account]
+pub struct FeePool {
+    /// Accumulated trading fees in $WEED
+    pub accumulated_fees: u64,
+    /// Treasury multisig/address for SOL conversion
+    pub treasury_address: Pubkey,
+    /// Last fee collection timestamp
+    pub last_collection_time: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 48],
+}
+
+/// User's seed inventory management
+/// Tracks all seeds owned by a user
+#[account]
+pub struct SeedStorage {
+    /// Storage owner's public key
+    pub owner: Pubkey,
+    /// Dynamic array of seed IDs (max 100 for rent optimization)
+    pub seed_ids: Vec<u64>,
+    /// Current seed count for quick access
+    pub total_seeds: u16,
+    /// Reserved bytes for future features
+    pub reserve: [u8; 32],
+}
+
+impl SeedStorage {
+    /// Maximum seeds per user to prevent excessive rent costs
+    pub const MAX_SEEDS: usize = 100;
+    
+    /// Check if storage has capacity for more seeds
+    pub fn can_add_seed(&self) -> bool {
+        self.seed_ids.len() < Self::MAX_SEEDS
+    }
+    
+    /// Add a new seed ID to storage
+    pub fn add_seed(&mut self, seed_id: u64) -> Result<()> {
+        require!(self.can_add_seed(), crate::error::GameError::StorageFull);
+        self.seed_ids.push(seed_id);
+        self.total_seeds = self.seed_ids.len() as u16;
+        Ok(())
+    }
+    
+    /// Remove seed ID from storage
+    pub fn remove_seed(&mut self, seed_id: u64) -> bool {
+        if let Some(pos) = self.seed_ids.iter().position(|&x| x == seed_id) {
+            self.seed_ids.remove(pos);
+            self.total_seeds = self.seed_ids.len() as u16;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Individual reward accumulation PDA per user
+#[account]
+pub struct RewardAccount {
+    /// User who can claim these rewards
+    pub user: Pubkey,
+    /// Accumulated claimable rewards
+    pub claimable_amount: u64,
+    /// Last harvest timestamp
+    pub last_harvest_time: i64,
+    /// Referral rewards (level 1: 10%, level 2: 5%)
+    pub referral_rewards_l1: u64,
+    pub referral_rewards_l2: u64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+impl InviteCode {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // inviter
+        1 + // invites_used
+        1 + // invite_limit
+        8 + // code
+        8 + // created_at
+        32; // reserve
+}
+
+impl GlobalStats {
+    pub const LEN: usize = 8 + // discriminator
+        8 + // total_grow_power
+        8 + // total_farm_spaces
+        8 + // total_supply
+        8 + // current_rewards_per_second
+        8 + // last_update_time
+        32; // reserve
+        
+    /// Initial total supply (1 billion WEED)
+    pub const INITIAL_TOTAL_SUPPLY: u64 = 1_000_000_000 * 1_000_000; // 1B WEED with 6 decimals
+}
+
+impl FeePool {
+    pub const LEN: usize = 8 + // discriminator
+        8 + // accumulated_fees
+        32 + // treasury_address
+        8 + // last_collection_time
+        48; // reserve
+}
+
+impl SeedStorage {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // owner
+        4 + (8 * 100) + // seed_ids (Vec<u64> with max 100 seeds)
+        2 + // total_seeds
+        32; // reserve
+}
+
+impl RewardAccount {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // user
+        8 + // claimable_amount
+        8 + // last_harvest_time
+        8 + // referral_rewards_l1
+        8 + // referral_rewards_l2
         32; // reserve
 }

@@ -15,35 +15,35 @@ import { ERROR_MESSAGES } from './utils/constants';
 import {
   type WalletAdapter,
   type UserStateAccount,
-  type FacilityAccount,
+  type FarmSpaceAccount,
   type ConfigAccount,
-  type MysteryBoxAccount,
+  type SeedPackAccount,
   type SeedAccount,
   type TransactionResult,
   type ProgramError,
   isUserStateAccount,
-  isFacilityAccount,
+  isFarmSpaceAccount,
   isConfigAccount,
-  safeBNToNumber
+  safeBNToNumber,
 } from './types/program-types';
-import idl from './idl/facility_game.json';
+import idl from './idl/farm_game.json';
 
-// Type for the Facility Game IDL
-type FacilityGameIDL = Idl;
+// Type for the Farm Game IDL
+type FarmGameIDL = Idl;
 
 // Program interface for type-safe account access
 interface ProgramAccountNamespace {
   userState: {
     fetchNullable(address: PublicKey): Promise<UserStateAccount | null>;
   };
-  facility: {
-    fetchNullable(address: PublicKey): Promise<FacilityAccount | null>;
+  farmSpace: {
+    fetchNullable(address: PublicKey): Promise<FarmSpaceAccount | null>;
   };
   config: {
     fetchNullable(address: PublicKey): Promise<ConfigAccount | null>;
   };
-  mysteryBox: {
-    fetchNullable(address: PublicKey): Promise<MysteryBoxAccount | null>;
+  seedPack: {
+    fetchNullable(address: PublicKey): Promise<SeedPackAccount | null>;
   };
   seed: {
     fetchNullable(address: PublicKey): Promise<SeedAccount | null>;
@@ -52,25 +52,80 @@ interface ProgramAccountNamespace {
 
 // Program interface for type-safe methods
 interface ProgramMethodNamespace {
+  initializeConfig(
+    baseRate: BN | null,
+    halvingInterval: BN | null,
+    treasury: PublicKey,
+    protocolReferralAddress: PublicKey | null
+  ): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  createRewardMint(): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
   initUser(referrer?: PublicKey | null): {
     accounts(accounts: Record<string, PublicKey>): {
       rpc(): Promise<string>;
     };
   };
-  buyFacility(): {
+  buyFarmSpace(): {
     accounts(accounts: Record<string, PublicKey>): {
       rpc(): Promise<string>;
     };
   };
   claimReward(): {
     accounts(accounts: Record<string, PublicKey>): {
-      preInstructions?(instructions: any[]): {
+      preInstructions?(instructions: unknown[]): {
         rpc(): Promise<string>;
       };
       rpc(): Promise<string>;
     };
   };
-  distributeReferralReward(amount: BN): {
+  plantSeed(seedId: BN): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  removeSeed(seedId: BN): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  upgradeFarmSpace(): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  completeFarmSpaceUpgrade(): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  purchaseSeedPack(quantity: number): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  openSeedPack(quantity: number): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  createInviteCode(inviteCode: number[]): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  useInviteCode(inviteCode: number[]): {
+    accounts(accounts: Record<string, PublicKey>): {
+      rpc(): Promise<string>;
+    };
+  };
+  distributeReferralOnClaim(baseReward: BN): {
     accounts(accounts: Record<string, PublicKey>): {
       rpc(): Promise<string>;
     };
@@ -80,27 +135,7 @@ interface ProgramMethodNamespace {
       rpc(): Promise<string>;
     };
   };
-  upgradeFacility(): {
-    accounts(accounts: Record<string, PublicKey>): {
-      rpc(): Promise<string>;
-    };
-  };
-  addMachine(): {
-    accounts(accounts: Record<string, PublicKey>): {
-      rpc(): Promise<string>;
-    };
-  };
   transferWithFee(amount: BN): {
-    accounts(accounts: Record<string, PublicKey>): {
-      rpc(): Promise<string>;
-    };
-  };
-  purchaseMysteryBox(): {
-    accounts(accounts: Record<string, PublicKey>): {
-      rpc(): Promise<string>;
-    };
-  };
-  openMysteryBox(mysteryBoxId: BN): {
     accounts(accounts: Record<string, PublicKey>): {
       rpc(): Promise<string>;
     };
@@ -110,7 +145,7 @@ interface ProgramMethodNamespace {
 // Enhanced program interface
 interface TypedProgram {
   programId: PublicKey;
-  coder: any;
+  coder: unknown;
   account: ProgramAccountNamespace;
   methods: ProgramMethodNamespace;
 }
@@ -125,14 +160,14 @@ export class AnchorClient {
     this.provider = new AnchorProvider(connection, wallet, { preflightCommitment: 'confirmed' });
 
     // Initialize program with IDL - casting required due to Anchor type limitations
-    const anchorProgram = new Program(idl as FacilityGameIDL, this.provider);
+    const anchorProgram = new Program(idl as FarmGameIDL, this.provider);
     this.program = {
       programId: anchorProgram.programId,
       coder: anchorProgram.coder,
-      account: anchorProgram.account as any,
-      methods: anchorProgram.methods as any,
+      account: anchorProgram.account as ProgramAccountNamespace,
+      methods: anchorProgram.methods as ProgramMethodNamespace,
     };
-    
+
     // Initialize batch fetcher for performance optimization
     this.batchFetcher = new BatchFetcher(connection);
   }
@@ -144,12 +179,89 @@ export class AnchorClient {
     if (cached) {
       return cached;
     }
-    
+
     // Calculate and cache PDAs
     const pdas = await PDAHelper.calculatePDAs(userPublicKey, this.program.programId);
     cacheManager.cachePDAs(userPublicKey, pdas);
-    
+
     return pdas;
+  }
+
+  // Initialize config (admin only)
+  async initializeConfig(
+    baseRate: BN | null = new BN(100),
+    halvingInterval: BN | null = new BN(518400), // 6 days
+    treasury?: PublicKey,
+    protocolReferralAddress?: PublicKey
+  ): Promise<string> {
+    try {
+      logger.info('⚙️ 設定を初期化中...');
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Use admin as treasury if not provided
+      const treasuryAccount = treasury || userPublicKey;
+
+      const tx = await this.program.methods
+        .initializeConfig(baseRate, halvingInterval, treasuryAccount, protocolReferralAddress || null)
+        .accounts({
+          config: pdas.config,
+          admin: userPublicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      logger.success(`設定初期化成功! トランザクション: ${tx}`);
+      return tx;
+    } catch (error) {
+      const programError = this.handleProgramError(error);
+      logger.error(`設定初期化エラー: ${programError.message}`);
+      throw programError;
+    }
+  }
+
+  // Create reward mint (admin only)
+  async createRewardMint(): Promise<string> {
+    try {
+      logger.info('🪙 報酬ミントを作成中...');
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Create the correct metadata account PDA as required by Token Metadata Program
+      const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
+        'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'
+      );
+      const [metadataAccount] = PublicKey.findProgramAddressSync(
+        [Buffer.from('metadata'), TOKEN_METADATA_PROGRAM_ID.toBuffer(), pdas.rewardMint.toBuffer()],
+        TOKEN_METADATA_PROGRAM_ID
+      );
+
+      logger.info(`Metadata account: ${metadataAccount.toString()}`);
+      logger.info(`Reward mint: ${pdas.rewardMint.toString()}`);
+
+      const tx = await this.program.methods
+        .createRewardMint()
+        .accounts({
+          rewardMint: pdas.rewardMint,
+          mintAuthority: pdas.mintAuthority,
+          metadataAccount: metadataAccount,
+          admin: userPublicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
+          tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+        })
+        .rpc();
+
+      logger.success(`報酬ミント作成成功! トランザクション: ${tx}`);
+      return tx;
+    } catch (error) {
+      const programError = this.handleProgramError(error);
+      logger.error(`報酬ミント作成エラー: ${programError.message}`);
+      throw programError;
+    }
   }
 
   // Initialize user account
@@ -181,17 +293,15 @@ export class AnchorClient {
       return tx;
     } catch (error) {
       const programError = this.handleProgramError(error);
-      logger.error(
-        `ユーザー初期化エラー: ${programError.message}`
-      );
+      logger.error(`ユーザー初期化エラー: ${programError.message}`);
       throw programError;
     }
   }
 
-  // Buy facility
-  async buyFacility(): Promise<TransactionResult> {
+  // Buy farm space
+  async buyFarmSpace(): Promise<TransactionResult> {
     try {
-      logger.info('🏭 施設を購入中...');
+      logger.info('🌾 農場スペースを購入中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
@@ -203,28 +313,49 @@ export class AnchorClient {
         throw new Error(ERROR_MESSAGES.USER_NOT_INITIALIZED);
       }
 
-      // Check if user already has facility
-      if (userStateAccount.hasFacility) {
-        logger.warn(ERROR_MESSAGES.FACILITY_ALREADY_OWNED);
+      // Check if user already has farm space
+      if (userStateAccount.hasFarmSpace) {
+        logger.warn('農場スペースは既に所有済みです');
         return 'already_owned';
       }
 
-      // Send buyFacility transaction
+      // Get config for treasury address
+      const config = await this.fetchConfig();
+      if (!config) {
+        throw new Error('Config not found');
+      }
+
+      // Calculate PDAs for farm space, global stats and initial seed
+      const [globalStatsPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('global_stats')],
+        this.program.programId
+      );
+
+      const [initialSeedPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('seed'), userPublicKey.toBuffer(), new BN(0).toArrayLike(Buffer, 'le', 8)],
+        this.program.programId
+      );
+
+      // Send buyFarmSpace transaction
       const tx = await this.program.methods
-        .buyFacility()
+        .buyFarmSpace()
         .accounts({
           userState: pdas.userState,
-          facility: pdas.facility,
+          farmSpace: pdas.farmSpace,
+          initialSeed: initialSeedPDA,
+          config: pdas.config,
+          globalStats: globalStatsPDA,
+          treasury: config.treasury,
           user: userPublicKey,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
 
-      logger.success(`施設購入成功! トランザクション: ${tx}`);
+      logger.success(`農場スペース購入成功! トランザクション: ${tx}`);
       return tx;
     } catch (error) {
       const programError = this.handleProgramError(error);
-      logger.error(`施設購入エラー: ${programError.message}`);
+      logger.error(`農場スペース購入エラー: ${programError.message}`);
       throw programError;
     }
   }
@@ -238,17 +369,23 @@ export class AnchorClient {
       const pdas = await this.calculatePDAs(userPublicKey);
 
       // Check if user is initialized
-      const userStateAccount = await (this.program.account as any).userState.fetchNullable(pdas.userState);
+      const userStateAccount = await this.program.account.userState.fetchNullable(pdas.userState);
       if (!userStateAccount) {
         logger.error(ERROR_MESSAGES.USER_NOT_INITIALIZED);
         throw new Error(ERROR_MESSAGES.USER_NOT_INITIALIZED);
       }
 
-      // Check if user has facility
-      if (!userStateAccount.hasFacility) {
-        logger.error(ERROR_MESSAGES.FACILITY_NOT_OWNED);
-        throw new Error(ERROR_MESSAGES.FACILITY_NOT_OWNED);
+      // Check if user has farm space
+      if (!userStateAccount.hasFarmSpace) {
+        logger.error('農場スペースを所有していません');
+        throw new Error('農場スペースを所有していません');
       }
+
+      // Get global stats PDA
+      const [globalStatsPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('global_stats')],
+        this.program.programId
+      );
 
       // Get or create user token account
       const userTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
@@ -272,6 +409,7 @@ export class AnchorClient {
       let txBuilder = this.program.methods.claimReward().accounts({
         userState: pdas.userState,
         config: pdas.config,
+        globalStats: globalStatsPDA,
         rewardMint: pdas.rewardMint,
         mintAuthority: pdas.mintAuthority,
         userTokenAccount: userTokenAccount,
@@ -303,56 +441,54 @@ export class AnchorClient {
       if (cached) {
         return cached;
       }
-      
+
       const pdas = await this.calculatePDAs(userPublicKey);
       const userState = await this.program.account.userState.fetchNullable(pdas.userState);
-      
+
       if (userState && !isUserStateAccount(userState)) {
         logger.warn('取得したユーザー状態の型が不正です');
         return null;
       }
-      
+
       // Cache the result
       if (userState) {
         cacheManager.cacheUserState(userPublicKey, userState);
       }
-      
+
       return userState;
     } catch (error) {
       const programError = this.handleProgramError(error);
-      logger.error(
-        `ユーザー状態取得エラー: ${programError.message}`
-      );
+      logger.error(`ユーザー状態取得エラー: ${programError.message}`);
       return null;
     }
   }
 
-  // Fetch facility with caching and type validation
-  async fetchFacility(userPublicKey: PublicKey): Promise<FacilityAccount | null> {
+  // Fetch farm space with caching and type validation
+  async fetchFarmSpace(userPublicKey: PublicKey): Promise<FarmSpaceAccount | null> {
     try {
       // Check cache first
-      const cached = cacheManager.getCachedFacility(userPublicKey);
+      const cached = cacheManager.getCachedFarmSpace(userPublicKey);
       if (cached) {
         return cached;
       }
-      
+
       const pdas = await this.calculatePDAs(userPublicKey);
-      const facility = await this.program.account.facility.fetchNullable(pdas.facility);
-      
-      if (facility && !isFacilityAccount(facility)) {
-        logger.warn('取得した施設状態の型が不正です');
+      const farmSpace = await this.program.account.farmSpace.fetchNullable(pdas.farmSpace);
+
+      if (farmSpace && !isFarmSpaceAccount(farmSpace)) {
+        logger.warn('取得した農場スペース状態の型が不正です');
         return null;
       }
-      
+
       // Cache the result
-      if (facility) {
-        cacheManager.cacheFacility(userPublicKey, facility);
+      if (farmSpace) {
+        cacheManager.cacheFarmSpace(userPublicKey, farmSpace);
       }
-      
-      return facility;
+
+      return farmSpace;
     } catch (error) {
       const programError = this.handleProgramError(error);
-      logger.error(`施設状態取得エラー: ${programError.message}`);
+      logger.error(`農場スペース状態取得エラー: ${programError.message}`);
       return null;
     }
   }
@@ -365,23 +501,23 @@ export class AnchorClient {
       if (cached) {
         return cached;
       }
-      
+
       const [configPDA] = await PublicKey.findProgramAddress(
         [Buffer.from('config')],
         this.program.programId
       );
       const config = await this.program.account.config.fetchNullable(configPDA);
-      
+
       if (config && !isConfigAccount(config)) {
         logger.warn('取得した設定の型が不正です');
         return null;
       }
-      
+
       // Cache the result
       if (config) {
         cacheManager.cacheConfig(this.program.programId, config);
       }
-      
+
       return config;
     } catch (error) {
       const programError = this.handleProgramError(error);
@@ -399,13 +535,13 @@ export class AnchorClient {
       const pdas = await this.calculatePDAs(userPublicKey);
 
       // Check if user already initialized
-      const userStateAccount = await (this.program.account as any).userState.fetchNullable(pdas.userState);
+      const userStateAccount = await this.program.account.userState.fetchNullable(pdas.userState);
       if (userStateAccount) {
         logger.warn(ERROR_MESSAGES.USER_ALREADY_INITIALIZED);
         return 'already_initialized';
       }
 
-      const accounts: any = {
+      const accounts: Record<string, PublicKey> = {
         userState: pdas.userState,
         user: userPublicKey,
         systemProgram: SystemProgram.programId,
@@ -433,19 +569,36 @@ export class AnchorClient {
     }
   }
 
-  // Distribute referral rewards
-  async distributeReferralReward(amount: number): Promise<string> {
+  // Distribute referral rewards during claim process
+  async distributeReferralRewards(baseReward: number): Promise<string> {
     try {
       logger.info('💰 紹介報酬を配布中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
 
+      // Get user state to find referrer
+      const userState = await this.fetchUserState(userPublicKey);
+      if (!userState?.referrer) {
+        throw new Error('No referrer found');
+      }
+
+      // Calculate referrer PDAs
+      const level1ReferrerPDAs = await this.calculatePDAs(userState.referrer);
+      const level1TokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userState.referrer);
+
       const tx = await this.program.methods
-        .distributeReferralReward(new BN(amount))
+        .distributeReferralOnClaim(new BN(baseReward))
         .accounts({
-          userState: pdas.userState,
-          user: userPublicKey,
+          claimantState: pdas.userState,
+          level1ReferrerState: level1ReferrerPDAs.userState,
+          level1TokenAccount: level1TokenAccount,
+          rewardMint: pdas.rewardMint,
+          mintAuthority: pdas.mintAuthority,
+          config: pdas.config,
+          claimant: userPublicKey,
+          level1Referrer: userState.referrer,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
 
@@ -469,12 +622,11 @@ export class AnchorClient {
       const tx = await this.program.methods
         .claimReferralRewards()
         .accounts({
-          userState: pdas.userState,
-          config: pdas.config,
+          referrerState: pdas.userState,
           rewardMint: pdas.rewardMint,
           mintAuthority: pdas.mintAuthority,
-          userTokenAccount: userTokenAccount,
-          user: userPublicKey,
+          referrerTokenAccount: userTokenAccount,
+          referrer: userPublicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
@@ -487,59 +639,138 @@ export class AnchorClient {
     }
   }
 
-  // Upgrade facility
-  async upgradeFacility(): Promise<string> {
+  // Upgrade farm space (start upgrade with 24h cooldown)
+  async upgradeFarmSpace(): Promise<string> {
     try {
-      logger.info('🔧 施設をアップグレード中...');
+      logger.info('🔧 農場スペースをアップグレード中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
       const userTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
 
       const tx = await this.program.methods
-        .upgradeFacility()
+        .upgradeFarmSpace()
         .accounts({
-          facility: pdas.facility,
-          userTokenAccount: userTokenAccount,
+          userState: pdas.userState,
+          farmSpace: pdas.farmSpace,
           rewardMint: pdas.rewardMint,
+          userTokenAccount: userTokenAccount,
           user: userPublicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
 
-      logger.success(`施設アップグレード成功! トランザクション: ${tx}`);
+      logger.success(`農場スペースアップグレード開始成功! トランザクション: ${tx}`);
       return tx;
     } catch (error) {
-      logger.error(`施設アップグレードエラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `農場スペースアップグレードエラー: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
 
-  // Add machine to facility
-  async addMachine(): Promise<string> {
+  // Complete farm space upgrade (after 24h cooldown)
+  async completeFarmSpaceUpgrade(): Promise<string> {
     try {
-      logger.info('⚙️ マシンを追加中...');
+      logger.info('✅ 農場スペースアップグレードを完了中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
-      const userTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
 
       const tx = await this.program.methods
-        .addMachine()
+        .completeFarmSpaceUpgrade()
         .accounts({
           userState: pdas.userState,
-          facility: pdas.facility,
-          userTokenAccount: userTokenAccount,
-          rewardMint: pdas.rewardMint,
+          farmSpace: pdas.farmSpace,
           user: userPublicKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
 
-      logger.success(`マシン追加成功! トランザクション: ${tx}`);
+      logger.success(`農場スペースアップグレード完了成功! トランザクション: ${tx}`);
       return tx;
     } catch (error) {
-      logger.error(`マシン追加エラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `農場スペースアップグレード完了エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
+      throw error;
+    }
+  }
+
+  // Plant seed in farm space
+  async plantSeed(seedId: number): Promise<string> {
+    try {
+      logger.info('🌱 シードを植え付け中...');
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Calculate seed PDA
+      const [seedPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('seed'), userPublicKey.toBuffer(), new BN(seedId).toArrayLike(Buffer, 'le', 8)],
+        this.program.programId
+      );
+
+      // Get global stats PDA
+      const [globalStatsPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('global_stats')],
+        this.program.programId
+      );
+
+      const tx = await this.program.methods
+        .plantSeed(new BN(seedId))
+        .accounts({
+          userState: pdas.userState,
+          farmSpace: pdas.farmSpace,
+          seed: seedPDA,
+          globalStats: globalStatsPDA,
+          user: userPublicKey,
+        })
+        .rpc();
+
+      logger.success(`シード植え付け成功! トランザクション: ${tx}`);
+      return tx;
+    } catch (error) {
+      logger.error(`シード植え付けエラー: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
+  // Remove seed from farm space
+  async removeSeed(seedId: number): Promise<string> {
+    try {
+      logger.info('🌾 シードを除去中...');
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Calculate seed PDA
+      const [seedPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('seed'), userPublicKey.toBuffer(), new BN(seedId).toArrayLike(Buffer, 'le', 8)],
+        this.program.programId
+      );
+
+      // Get global stats PDA
+      const [globalStatsPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('global_stats')],
+        this.program.programId
+      );
+
+      const tx = await this.program.methods
+        .removeSeed(new BN(seedId))
+        .accounts({
+          userState: pdas.userState,
+          farmSpace: pdas.farmSpace,
+          seed: seedPDA,
+          globalStats: globalStatsPDA,
+          user: userPublicKey,
+        })
+        .rpc();
+
+      logger.success(`シード除去成功! トランザクション: ${tx}`);
+      return tx;
+    } catch (error) {
+      logger.error(`シード除去エラー: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
@@ -552,7 +783,10 @@ export class AnchorClient {
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
       const senderTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
-      const recipientTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, recipientPublicKey);
+      const recipientTokenAccount = await getAssociatedTokenAddress(
+        pdas.rewardMint,
+        recipientPublicKey
+      );
       const treasuryTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, pdas.treasury);
 
       const tx = await this.program.methods
@@ -570,103 +804,204 @@ export class AnchorClient {
       logger.success(`手数料付き転送成功! トランザクション: ${tx}`);
       return tx;
     } catch (error) {
-      logger.error(`手数料付き転送エラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `手数料付き転送エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
 
-  // Purchase mystery box
-  async purchaseMysteryBox(): Promise<string> {
+  // Purchase seed pack
+  async purchaseSeedPack(quantity: number): Promise<string> {
     try {
-      logger.info('📦 ミステリーボックスを購入中...');
+      logger.info('📦 シードパックを購入中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
       const userTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
-      
-      // Generate mystery box PDA
+
+      // Generate seed pack PDA
       const config = await this.fetchConfig();
       if (!config) throw new Error('Config not found');
-      
-      const mysteryBoxId = config.mysteryBoxCounter;
-      const [mysteryBoxPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('mystery_box'), userPublicKey.toBuffer(), mysteryBoxId.toArrayLike(Buffer, 'le', 8)],
+
+      const seedPackId = config.seedPackCounter;
+      const [seedPackPDA] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from('seed_pack'),
+          userPublicKey.toBuffer(),
+          seedPackId.toArrayLike(Buffer, 'le', 8),
+        ],
         this.program.programId
       );
 
       const tx = await this.program.methods
-        .purchaseMysteryBox()
+        .purchaseSeedPack(quantity)
         .accounts({
+          userState: pdas.userState,
           config: pdas.config,
-          mysteryBox: mysteryBoxPDA,
-          userTokenAccount: userTokenAccount,
+          seedPack: seedPackPDA,
           rewardMint: pdas.rewardMint,
+          userTokenAccount: userTokenAccount,
           user: userPublicKey,
-          systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
-      logger.success(`ミステリーボックス購入成功! トランザクション: ${tx}`);
+      logger.success(`シードパック購入成功! トランザクション: ${tx}`);
       return tx;
     } catch (error) {
-      logger.error(`ミステリーボックス購入エラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `シードパック購入エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
 
-  // Open mystery box
-  async openMysteryBox(mysteryBoxId: number): Promise<string> {
+  // Open seed pack
+  async openSeedPack(packId: number, quantity: number): Promise<string> {
     try {
-      logger.info('📦 ミステリーボックスを開封中...');
+      logger.info('📦 シードパックを開封中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
-      
-      const [mysteryBoxPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('mystery_box'), userPublicKey.toBuffer(), new BN(mysteryBoxId).toArrayLike(Buffer, 'le', 8)],
+
+      const [seedPackPDA] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from('seed_pack'),
+          userPublicKey.toBuffer(),
+          new BN(packId).toArrayLike(Buffer, 'le', 8),
+        ],
         this.program.programId
       );
-      
-      const config = await this.fetchConfig();
-      if (!config) throw new Error('Config not found');
-      
-      const seedId = config.seedCounter;
-      const [seedPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('seed'), userPublicKey.toBuffer(), seedId.toArrayLike(Buffer, 'le', 8)],
+
+      // Get seed storage PDA
+      const [seedStoragePDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('seed_storage'), userPublicKey.toBuffer()],
         this.program.programId
       );
 
       const tx = await this.program.methods
-        .openMysteryBox(new BN(mysteryBoxId))
+        .openSeedPack(quantity)
         .accounts({
+          seedPack: seedPackPDA,
           config: pdas.config,
-          mysteryBox: mysteryBoxPDA,
-          seed: seedPDA,
+          seedStorage: seedStoragePDA,
           user: userPublicKey,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
 
-      logger.success(`ミステリーボックス開封成功! トランザクション: ${tx}`);
+      logger.success(`シードパック開封成功! トランザクション: ${tx}`);
       return tx;
     } catch (error) {
-      logger.error(`ミステリーボックス開封エラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `シードパック開封エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
+      throw error;
+    }
+  }
+
+  // Create invite code
+  async createInviteCode(inviteCode: string): Promise<string> {
+    try {
+      logger.info('🎟️ 招待コードを作成中...');
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Convert invite code to byte array
+      const inviteCodeBytes = Array.from(Buffer.from(inviteCode.padEnd(8, '\0')).slice(0, 8));
+
+      const [inviteCodePDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('invite_code'), Buffer.from(inviteCodeBytes)],
+        this.program.programId
+      );
+
+      const tx = await this.program.methods
+        .createInviteCode(inviteCodeBytes)
+        .accounts({
+          inviteCodeAccount: inviteCodePDA,
+          config: pdas.config,
+          inviter: userPublicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      logger.success(`招待コード作成成功! トランザクション: ${tx}`);
+      return tx;
+    } catch (error) {
+      logger.error(
+        `招待コード作成エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
+      throw error;
+    }
+  }
+
+  // Use invite code
+  async useInviteCode(inviteCode: string): Promise<string> {
+    try {
+      logger.info('🎟️ 招待コードを使用中...');
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Convert invite code to byte array
+      const inviteCodeBytes = Array.from(Buffer.from(inviteCode.padEnd(8, '\0')).slice(0, 8));
+
+      const [inviteCodePDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('invite_code'), Buffer.from(inviteCodeBytes)],
+        this.program.programId
+      );
+
+      // Get the invite code account to find the inviter
+      const inviteCodeAccount = await this.program.account.inviteCode?.fetchNullable?.(inviteCodePDA);
+      if (!inviteCodeAccount) {
+        throw new Error('Invite code not found');
+      }
+
+      const tx = await this.program.methods
+        .useInviteCode(inviteCodeBytes)
+        .accounts({
+          inviteCodeAccount: inviteCodePDA,
+          userState: pdas.userState,
+          config: pdas.config,
+          invitee: userPublicKey,
+          inviter: inviteCodeAccount.inviter,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      logger.success(`招待コード使用成功! トランザクション: ${tx}`);
+      return tx;
+    } catch (error) {
+      logger.error(
+        `招待コード使用エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
 
   // Fetch mystery box
-  async fetchMysteryBox(userPublicKey: PublicKey, mysteryBoxId: number): Promise<MysteryBoxAccount | null> {
+  async fetchMysteryBox(
+    userPublicKey: PublicKey,
+    mysteryBoxId: number
+  ): Promise<MysteryBoxAccount | null> {
     try {
       const [mysteryBoxPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('mystery_box'), userPublicKey.toBuffer(), new BN(mysteryBoxId).toArrayLike(Buffer, 'le', 8)],
+        [
+          Buffer.from('mystery_box'),
+          userPublicKey.toBuffer(),
+          new BN(mysteryBoxId).toArrayLike(Buffer, 'le', 8),
+        ],
         this.program.programId
       );
-      const mysteryBox = await (this.program.account as any).mysteryBox.fetchNullable(mysteryBoxPDA);
+      const mysteryBox = await this.program.account.mysteryBox.fetchNullable(mysteryBoxPDA);
       return mysteryBox;
     } catch (error) {
-      logger.error(`ミステリーボックス取得エラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `ミステリーボックス取得エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
       return null;
     }
   }
@@ -675,10 +1010,14 @@ export class AnchorClient {
   async fetchSeed(userPublicKey: PublicKey, seedId: number): Promise<SeedAccount | null> {
     try {
       const [seedPDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('seed'), userPublicKey.toBuffer(), new BN(seedId).toArrayLike(Buffer, 'le', 8)],
+        [
+          Buffer.from('seed'),
+          userPublicKey.toBuffer(),
+          new BN(seedId).toArrayLike(Buffer, 'le', 8),
+        ],
         this.program.programId
       );
-      const seed = await (this.program.account as any).seed.fetchNullable(seedPDA);
+      const seed = await this.program.account.seed.fetchNullable(seedPDA);
       return seed;
     } catch (error) {
       logger.error(`シード取得エラー: ${error instanceof Error ? error.message : String(error)}`);
@@ -692,15 +1031,16 @@ export class AnchorClient {
       const pdas = await this.calculatePDAs(userPublicKey);
       const userTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
 
-      const tokenAccountInfo =
-        await this.provider.connection.getTokenAccountBalance(userTokenAccount);
-      
+      const tokenAccountInfo = await this.provider.connection.getTokenAccountBalance(
+        userTokenAccount
+      );
+
       const amount = new BN(tokenAccountInfo.value.amount);
       const decimals = tokenAccountInfo.value.decimals;
-      
+
       // Use safe conversion to avoid overflow
       return safeBNToNumber(amount) / Math.pow(10, decimals);
-    } catch (error) {
+    } catch {
       // Token account might not exist yet
       return 0;
     }
@@ -730,7 +1070,7 @@ export class AnchorClient {
   }> {
     try {
       const pdas = await this.calculatePDAs(userPublicKey);
-      
+
       // Create batch request for all game state accounts
       const batchRequests = BatchFetcher.createGameStateBatch(userPublicKey, {
         userState: pdas.userState,
@@ -738,18 +1078,18 @@ export class AnchorClient {
         config: pdas.config,
         rewardMint: pdas.rewardMint,
       });
-      
+
       // Fetch all accounts in a single batch
       const results = await this.batchFetcher.fetchMultipleAccounts(batchRequests);
-      
+
       // Process results with caching
       let userState: UserStateAccount | null = null;
       let facility: FacilityAccount | null = null;
       let config: ConfigAccount | null = null;
-      
+
       for (const result of results) {
         if (result.account === null) continue;
-        
+
         switch (result.name) {
           case 'userState':
             try {
@@ -762,7 +1102,7 @@ export class AnchorClient {
               logger.warn(`UserState decode error: ${e}`);
             }
             break;
-            
+
           case 'facility':
             try {
               const decoded = this.program.coder.accounts.decode('facility', result.account.data);
@@ -774,7 +1114,7 @@ export class AnchorClient {
               logger.warn(`Facility decode error: ${e}`);
             }
             break;
-            
+
           case 'config':
             try {
               const decoded = this.program.coder.accounts.decode('config', result.account.data);
@@ -788,10 +1128,10 @@ export class AnchorClient {
             break;
         }
       }
-      
+
       // Get token balance separately (more complex due to ATA)
       const tokenBalance = await this.getTokenBalance(userPublicKey);
-      
+
       return {
         userState,
         facility,
@@ -803,14 +1143,16 @@ export class AnchorClient {
         pendingReferralRewards: userState ? safeBNToNumber(userState.pendingReferralRewards) : 0,
       };
     } catch (error) {
-      logger.error(`バッチゲーム状態取得エラー: ${error instanceof Error ? error.message : String(error)}`);
-      
+      logger.error(
+        `バッチゲーム状態取得エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
+
       // Fallback to individual fetching
       const userState = await this.fetchUserState(userPublicKey);
       const facility = await this.fetchFacility(userPublicKey);
       const config = await this.fetchConfig();
       const tokenBalance = await this.getTokenBalance(userPublicKey);
-      
+
       return {
         userState,
         facility,
@@ -823,39 +1165,38 @@ export class AnchorClient {
       };
     }
   }
-  
+
   // Cache invalidation for transactions
   invalidateUserCache(userPublicKey: PublicKey): void {
     cacheManager.invalidateUserCache(userPublicKey);
   }
-  
+
   // Performance monitoring
   async measureFetchPerformance(userPublicKey: PublicKey): Promise<{
     batchTime: number;
     individualTime: number;
     improvement: number;
   }> {
-    
     // Measure batch performance
     const batchStart = performance.now();
     await this.fetchCompleteGameState(userPublicKey);
     const batchTime = performance.now() - batchStart;
-    
+
     // Clear cache for fair comparison
     cacheManager.invalidateUserCache(userPublicKey);
-    
+
     // Measure individual performance
     const individualStart = performance.now();
     await Promise.all([
       this.fetchUserState(userPublicKey),
-      this.fetchFacility(userPublicKey),
+      this.fetchFarmSpace(userPublicKey),
       this.fetchConfig(),
       this.getTokenBalance(userPublicKey),
     ]);
     const individualTime = performance.now() - individualStart;
-    
+
     const improvement = ((individualTime - batchTime) / individualTime) * 100;
-    
+
     return {
       batchTime,
       individualTime,
@@ -872,7 +1213,7 @@ export class AnchorClient {
         message: error.message,
       };
     }
-    
+
     if (typeof error === 'object' && error !== null && 'logs' in error) {
       return {
         name: 'ProgramError',
@@ -880,7 +1221,7 @@ export class AnchorClient {
         logs: (error as { logs: string[] }).logs,
       };
     }
-    
+
     return {
       name: 'ProgramError',
       message: String(error),

@@ -4,14 +4,10 @@ import { PublicKey } from '@solana/web3.js';
 import { SolanaService } from './solana';
 import { GameService, type UICallbacks } from './services/game-service';
 import { logger } from './logger';
-import {
-  GAME_CONSTANTS,
-  UI_CONSTANTS,
-  NETWORK_CONSTANTS,
-} from './utils/constants';
+import { GAME_CONSTANTS, UI_CONSTANTS, NETWORK_CONSTANTS } from './utils/constants';
 import type { WalletState, GameState } from './types';
 
-class FacilityGameApp {
+class FarmGameApp {
   private solanaService: SolanaService;
   private gameService: GameService;
   private currentWallet: WalletState | null = null;
@@ -20,16 +16,16 @@ class FacilityGameApp {
   constructor() {
     this.solanaService = new SolanaService();
     this.gameService = new GameService(this.solanaService);
-    
+
     // UI コールバックを初期化
     this.uiCallbacks = {
       showLoading: (message: string) => this.showLoading(message),
       hideLoading: () => this.hideLoading(),
       showSuccess: (message: string) => this.showSuccess(message),
       showError: (message: string) => this.showError(message),
-      updateGameState: () => this.handleRefreshData()
+      updateGameState: () => this.handleRefreshData(),
     };
-    
+
     this.init();
   }
 
@@ -67,13 +63,22 @@ class FacilityGameApp {
       await this.handleWalletConnect();
     });
 
+    // 管理者アクション
+    document.getElementById('init-config')?.addEventListener('click', () => {
+      this.handleInitConfig();
+    });
+
+    document.getElementById('create-reward-mint')?.addEventListener('click', () => {
+      this.handleCreateRewardMint();
+    });
+
     // 基本ゲームアクション
     document.getElementById('init-user')?.addEventListener('click', () => {
       this.handleInitUser();
     });
 
-    document.getElementById('buy-facility')?.addEventListener('click', () => {
-      this.handleBuyFacility();
+    document.getElementById('buy-farm-space')?.addEventListener('click', () => {
+      this.handleBuyFarmSpace();
     });
 
     document.getElementById('claim-rewards')?.addEventListener('click', () => {
@@ -85,13 +90,13 @@ class FacilityGameApp {
       this.handleClaimReferralRewards();
     });
 
-    // 施設管理
-    document.getElementById('upgrade-facility')?.addEventListener('click', () => {
-      this.handleUpgradeFacility();
+    // ファームスペース管理
+    document.getElementById('upgrade-farm-space')?.addEventListener('click', () => {
+      this.handleUpgradeFarmSpace();
     });
 
-    document.getElementById('add-machine')?.addEventListener('click', () => {
-      this.handleAddMachine();
+    document.getElementById('complete-upgrade')?.addEventListener('click', () => {
+      this.handleCompleteUpgrade();
     });
 
     // 転送システム
@@ -99,13 +104,13 @@ class FacilityGameApp {
       this.handleTransferTokens();
     });
 
-    // ミステリーボックス
-    document.getElementById('purchase-mystery-box')?.addEventListener('click', () => {
-      this.handlePurchaseMysteryBox();
+    // シードパック
+    document.getElementById('purchase-seed-pack')?.addEventListener('click', () => {
+      this.handlePurchaseSeedPack();
     });
 
-    document.getElementById('open-mystery-box')?.addEventListener('click', () => {
-      this.handleOpenMysteryBox();
+    document.getElementById('open-seed-pack')?.addEventListener('click', () => {
+      this.handleOpenSeedPack();
     });
 
     // データ更新
@@ -129,7 +134,22 @@ class FacilityGameApp {
       const walletState = await this.solanaService.connectWallet();
       this.currentWallet = walletState;
       this.updateWalletDisplay(walletState);
-      this.enableGameButtons();
+
+      // SOLエアドロップボタンを最初に有効化
+      this.enableAirdropButton();
+
+      // 残高をチェックしてから他のボタンを有効化
+      if (walletState.balance > 0.01) {
+        this.enableGameButtons();
+      } else {
+        // 残高が少ない場合は警告を表示
+        this.showError(
+          'SOL残高が不足しています。まず「💰 2 SOL を取得する」ボタンでSOLを取得してください。'
+        );
+      }
+
+      // 設定情報を取得
+      await this.updateConfigDisplay();
 
       // ゲーム状態を取得
       await this.handleRefreshData();
@@ -152,22 +172,65 @@ class FacilityGameApp {
       // Convert to UI-compatible GameState
       const gameState: GameState = {
         userInitialized: detailedState.userInitialized,
-        hasFacility: detailedState.hasFacility,
+        hasFarmSpace: detailedState.hasFarmSpace,
         growPower: detailedState.growPower,
         tokenBalance: detailedState.tokenBalance,
         lastHarvestTime: detailedState.userState?.lastHarvestTime.toNumber() || 0,
         pendingReferralRewards: detailedState.pendingReferralRewards,
-        facility: detailedState.facility ? {
-          facilitySize: detailedState.facility.facilitySize,
-          maxCapacity: detailedState.facility.maxCapacity,
-          machineCount: detailedState.facility.machineCount,
-          totalGrowPower: detailedState.facility.totalGrowPower.toNumber()
-        } : undefined
+        farmSpace: detailedState.farmSpace
+          ? {
+              level: detailedState.farmSpace.level,
+              capacity: detailedState.farmSpace.capacity,
+              seedCount: detailedState.farmSpace.seedCount,
+              totalGrowPower: detailedState.farmSpace.totalGrowPower.toNumber(),
+            }
+          : undefined,
       };
       this.updateGameDisplay(gameState);
+
+      // 設定情報も更新
+      await this.updateConfigDisplay();
     } catch (error) {
       logger.error(`データ更新エラー: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async updateConfigDisplay() {
+    try {
+      const config = await this.solanaService.getAnchorClient()?.fetchConfig();
+      const configStatusEl = document.getElementById('config-status');
+      const adminAddressEl = document.getElementById('admin-address');
+
+      if (config) {
+        if (configStatusEl) {
+          configStatusEl.textContent = '初期化済み';
+          configStatusEl.style.color = '#155724';
+        }
+        if (adminAddressEl) {
+          adminAddressEl.innerHTML = `<strong>管理者:</strong> ${config.admin.toString()}`;
+        }
+      } else {
+        if (configStatusEl) {
+          configStatusEl.textContent = '未初期化';
+          configStatusEl.style.color = '#721c24';
+        }
+        if (adminAddressEl) {
+          adminAddressEl.textContent = '';
+        }
+      }
+    } catch {
+      logger.warn('設定情報の取得に失敗しました');
+    }
+  }
+
+  private async handleInitConfig() {
+    logger.info('⚙️ 設定初期化機能');
+    await this.gameService.initializeConfig(this.uiCallbacks);
+  }
+
+  private async handleCreateRewardMint() {
+    logger.info('🪙 報酬ミント作成機能');
+    await this.gameService.createRewardMint(this.uiCallbacks);
   }
 
   private async handleInitUser() {
@@ -175,9 +238,9 @@ class FacilityGameApp {
     await this.gameService.initializeUser(this.uiCallbacks);
   }
 
-  private async handleBuyFacility() {
-    logger.info('🏭 施設購入機能');
-    await this.gameService.purchaseFacility(this.uiCallbacks);
+  private async handleBuyFarmSpace() {
+    logger.info('🌱 ファームスペース購入機能');
+    await this.gameService.purchaseFarmSpace(this.uiCallbacks);
   }
 
   private async handleClaimRewards() {
@@ -193,7 +256,15 @@ class FacilityGameApp {
         // エアドロップ後はウォレット表示を更新
         const walletState = this.solanaService.getWalletState();
         this.updateWalletDisplay(walletState);
-      }
+
+        // 十分な残高があれば他のボタンも有効化
+        if (walletState.balance > 0.01) {
+          this.enableGameButtons();
+          this.showSuccess(
+            'SOL取得完了！これでゲーム機能を使用できます。「ユーザー初期化」から始めましょう！'
+          );
+        }
+      },
     });
   }
 
@@ -202,14 +273,14 @@ class FacilityGameApp {
     await this.gameService.claimReferralRewards(this.uiCallbacks);
   }
 
-  private async handleUpgradeFacility() {
-    logger.info('🔧 施設アップグレード機能');
-    await this.gameService.upgradeFacility(this.uiCallbacks);
+  private async handleUpgradeFarmSpace() {
+    logger.info('🔧 ファームスペースアップグレード機能');
+    await this.gameService.upgradeFarmSpace(this.uiCallbacks);
   }
 
-  private async handleAddMachine() {
-    logger.info('⚙️ マシン追加機能');
-    await this.gameService.addMachine(this.uiCallbacks);
+  private async handleCompleteUpgrade() {
+    logger.info('✅ アップグレード完了機能');
+    await this.gameService.completeFarmSpaceUpgrade(this.uiCallbacks);
   }
 
   private async handleTransferTokens() {
@@ -231,23 +302,23 @@ class FacilityGameApp {
     }
   }
 
-  private async handlePurchaseMysteryBox() {
-    logger.info('📦 ミステリーボックス購入機能');
-    await this.gameService.purchaseMysteryBox(this.uiCallbacks);
+  private async handlePurchaseSeedPack() {
+    logger.info('📦 シードパック購入機能');
+    await this.gameService.purchaseSeedPack(this.uiCallbacks);
   }
 
-  private async handleOpenMysteryBox() {
-    logger.info('📦 ミステリーボックス開封機能');
+  private async handleOpenSeedPack() {
+    logger.info('📦 シードパック開封機能');
 
     try {
       // 簡単な例として固定値を使用（実際のUIでは選択リストから取得）
-      const mysteryBoxId = prompt('開封するミステリーボックスのIDを入力してください:');
+      const seedPackId = prompt('開封するシードパックのIDを入力してください:');
 
-      if (!mysteryBoxId) {
-        throw new Error('ミステリーボックスIDが入力されていません');
+      if (!seedPackId) {
+        throw new Error('シードパックIDが入力されていません');
       }
 
-      await this.gameService.openMysteryBox(parseInt(mysteryBoxId), this.uiCallbacks);
+      await this.gameService.openSeedPack(parseInt(seedPackId), this.uiCallbacks);
     } catch (error) {
       this.showError(`入力エラー: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -319,18 +390,18 @@ class FacilityGameApp {
 
   private updateGameDisplay(gameState: GameState) {
     const userStateEl = document.getElementById('user-state');
-    const facilityStateEl = document.getElementById('facility-state');
+    const farmSpaceStateEl = document.getElementById('farm-space-state');
     const growPowerEl = document.getElementById('grow-power');
     const tokenBalanceEl = document.getElementById('token-balance');
-    const facilityDetailsEl = document.getElementById('facility-details');
+    const farmSpaceDetailsEl = document.getElementById('farm-space-details');
     const referralRewardsEl = document.getElementById('referral-rewards');
 
     if (userStateEl) {
       userStateEl.textContent = gameState.userInitialized ? '初期化済み' : '未初期化';
     }
 
-    if (facilityStateEl) {
-      facilityStateEl.textContent = gameState.hasFacility ? '所有済み' : '未所有';
+    if (farmSpaceStateEl) {
+      farmSpaceStateEl.textContent = gameState.hasFarmSpace ? '所有済み' : '未所有';
     }
 
     if (growPowerEl) {
@@ -340,37 +411,59 @@ class FacilityGameApp {
     if (tokenBalanceEl) {
       // トークンの decimals を定数から取得
       const tokenBalance = gameState.tokenBalance / Math.pow(10, GAME_CONSTANTS.TOKEN_DECIMALS);
-      tokenBalanceEl.textContent = `${tokenBalance.toFixed(UI_CONSTANTS.TOKEN_DECIMAL_PLACES)} ${GAME_CONSTANTS.TOKEN_SYMBOL}`;
+      tokenBalanceEl.textContent = `${tokenBalance.toFixed(UI_CONSTANTS.TOKEN_DECIMAL_PLACES)} ${
+        GAME_CONSTANTS.TOKEN_SYMBOL
+      }`;
     }
 
-    // 施設詳細情報の更新
-    if (facilityDetailsEl && gameState.facility) {
-      facilityDetailsEl.innerHTML = `
-        <div><strong>サイズ:</strong> ${gameState.facility.facilitySize}</div>
-        <div><strong>最大容量:</strong> ${gameState.facility.maxCapacity}</div>
-        <div><strong>マシン数:</strong> ${gameState.facility.machineCount}</div>
+    // ファームスペース詳細情報の更新
+    if (farmSpaceDetailsEl && gameState.farmSpace) {
+      farmSpaceDetailsEl.innerHTML = `
+        <div><strong>レベル:</strong> ${gameState.farmSpace.level}</div>
+        <div><strong>最大容量:</strong> ${gameState.farmSpace.capacity}</div>
+        <div><strong>シード数:</strong> ${gameState.farmSpace.seedCount}</div>
       `;
-    } else if (facilityDetailsEl) {
-      facilityDetailsEl.innerHTML = '<div>施設なし</div>';
+    } else if (farmSpaceDetailsEl) {
+      farmSpaceDetailsEl.innerHTML = '<div>ファームスペースなし</div>';
     }
 
     // 紹介報酬の更新
     if (referralRewardsEl && gameState.pendingReferralRewards !== undefined) {
-      const referralRewards = gameState.pendingReferralRewards / Math.pow(10, GAME_CONSTANTS.TOKEN_DECIMALS);
-      referralRewardsEl.textContent = `${referralRewards.toFixed(UI_CONSTANTS.TOKEN_DECIMAL_PLACES)} ${GAME_CONSTANTS.TOKEN_SYMBOL}`;
+      const referralRewards =
+        gameState.pendingReferralRewards / Math.pow(10, GAME_CONSTANTS.TOKEN_DECIMALS);
+      referralRewardsEl.textContent = `${referralRewards.toFixed(
+        UI_CONSTANTS.TOKEN_DECIMAL_PLACES
+      )} ${GAME_CONSTANTS.TOKEN_SYMBOL}`;
     }
   }
 
   private enableGameButtons() {
     const buttons = [
-      'init-user', 'buy-facility', 'claim-rewards', 'airdrop-sol',
-      'claim-referral-rewards', 'upgrade-facility', 'add-machine', 
-      'transfer-tokens', 'purchase-mystery-box', 'open-mystery-box'
+      'init-config',
+      'create-reward-mint',
+      'init-user',
+      'buy-farm-space',
+      'claim-rewards',
+      'airdrop-sol',
+      'claim-referral-rewards',
+      'upgrade-farm-space',
+      'complete-upgrade',
+      'transfer-tokens',
+      'purchase-seed-pack',
+      'open-seed-pack',
     ];
     buttons.forEach((id) => {
       const button = document.getElementById(id) as HTMLButtonElement;
       if (button) button.disabled = false;
     });
+  }
+
+  private enableAirdropButton() {
+    const airdropButton = document.getElementById('airdrop-sol') as HTMLButtonElement;
+    if (airdropButton) {
+      airdropButton.disabled = false;
+      airdropButton.style.background = '#28a745';
+    }
   }
 
   private showError(message: string) {
@@ -384,10 +477,26 @@ class FacilityGameApp {
       // 残高不足の場合の案内を追加
       if (
         message.includes('Attempt to debit an account but found no record of a prior credit') ||
-        message.includes('insufficient funds')
+        message.includes('insufficient funds') ||
+        message.includes('Transaction simulation failed') ||
+        message.includes('残高不足')
       ) {
-        displayMessage =
-          '残高不足です。「SOLエアドロップ (開発用)」ボタンでSOLを取得してから再試行してください。';
+        displayMessage = `
+          <div style="margin-bottom: 10px;">
+            <strong>⚠️ SOL残高不足です</strong><br>
+            devnetでテストするには少なくとも0.01 SOLが必要です。
+          </div>
+          <div style="margin-bottom: 10px;">
+            <button onclick="document.getElementById('airdrop-sol').click()" 
+                    class="button" 
+                    style="margin: 5px 0; background: #28a745;">
+              💰 今すぐSOLを取得する
+            </button>
+          </div>
+          <div style="font-size: 12px; color: #666;">
+            または手動で「SOLエアドロップ (開発用)」ボタンをクリックしてください。
+          </div>
+        `;
       }
 
       statusEl.innerHTML = `<div class="error">${displayMessage}</div>`;
@@ -399,26 +508,28 @@ class FacilityGameApp {
 // DOM読み込み完了後にアプリを初期化 (テスト環境では実行しない)
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', () => {
-    new FacilityGameApp();
+    new FarmGameApp();
 
     // デバッグ用グローバル関数
-    (window as any).testHeliusConnection = async () => {
-      const service = new SolanaService();
-      return await service.testConnection();
-    };
-    
+    (window as unknown as { testHeliusConnection: () => Promise<unknown> }).testHeliusConnection =
+      async () => {
+        const service = new SolanaService();
+        return await service.testConnection();
+      };
+
     // Manual test function for browser console
-    (window as any).runManualTest = async () => {
+    (window as unknown as { runManualTest: () => Promise<unknown> }).runManualTest = async () => {
       const { runManualFrontendTest } = await import('./test/manual-frontend-test');
       return await runManualFrontendTest();
     };
-    
-    console.log('🎮 Facility Game Frontend loaded!');
-    console.log('💡 Available console commands:');
-    console.log('  - testHeliusConnection(): Test RPC connection');
-    console.log('  - runManualTest(): Run comprehensive frontend test');
+
+    // Debug information for development
+    logger.info('🎮 Facility Game Frontend loaded!');
+    logger.info('💡 Available console commands:');
+    logger.info('  - testHeliusConnection(): Test RPC connection');
+    logger.info('  - runManualTest(): Run comprehensive frontend test');
   });
 }
 
 // TypeScriptのエクスポート（必要に応じて）
-export { FacilityGameApp };
+export { FarmGameApp };

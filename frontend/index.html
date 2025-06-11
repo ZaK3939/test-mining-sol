@@ -159,6 +159,16 @@
         <div class="header">
             <h1>🏭 Solana Facility Game</h1>
             <p>TypeScript フロントエンドデモ - Helius RPC接続テスト</p>
+            <div style="background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 15px; margin: 15px 0; text-align: left;">
+                <h4 style="margin-top: 0; color: #0066cc;">📋 使用手順</h4>
+                <ol style="margin: 10px 0; padding-left: 20px; color: #333;">
+                    <li><strong>ウォレット接続</strong> - Phantom ウォレットを接続</li>
+                    <li><strong>SOL取得</strong> - 「💰 2 SOL を取得する」でテスト用SOLを入手</li>
+                    <li><strong>ユーザー初期化</strong> - アカウントを初期化</li>
+                    <li><strong>施設購入</strong> - 最初の施設を購入</li>
+                    <li><strong>機能テスト</strong> - 報酬請求、アップグレードなどを試す</li>
+                </ol>
+            </div>
         </div>
 
         <!-- 接続状況 -->
@@ -198,8 +208,8 @@
                     <div class="value" id="user-state">未確認</div>
                 </div>
                 <div class="info-item">
-                    <label>施設状況:</label>
-                    <div class="value" id="facility-state">未確認</div>
+                    <label>ファームスペース状況:</label>
+                    <div class="value" id="farm-space-state">未確認</div>
                 </div>
                 <div class="info-item">
                     <label>Grow Power:</label>
@@ -216,22 +226,52 @@
             </div>
         </div>
 
-        <!-- 施設詳細 -->
+        <!-- ファームスペース詳細 -->
         <div class="status-card">
-            <h3>🏢 施設詳細</h3>
-            <div id="facility-details">
-                <div>施設なし</div>
+            <h3>🌱 ファームスペース詳細</h3>
+            <div id="farm-space-details">
+                <div>ファームスペースなし</div>
             </div>
+        </div>
+
+        <!-- SOLエアドロップ（最初に配置） -->
+        <div class="status-card" style="border: 2px solid #28a745; background: #f8fff9;">
+            <h3>💰 devnet SOL取得 (テスト用)</h3>
+            <div style="margin-bottom: 15px; color: #155724;">
+                <strong>最初にSOLを取得してください！</strong><br>
+                すべての操作にはSOL（手数料）が必要です。
+            </div>
+            <button id="airdrop-sol" class="button" style="background: #28a745; font-size: 18px; padding: 15px 30px;">
+                💰 2 SOL を取得する
+            </button>
+            <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                ※ devnetのテスト用SOLです。実際の価値はありません。
+            </div>
+        </div>
+
+        <!-- 管理者アクション -->
+        <div class="status-card" style="border: 2px solid #dc3545; background: #fff5f5;">
+            <h3>⚙️ 管理者アクション</h3>
+            <div style="margin-bottom: 15px; color: #721c24;">
+                <strong>⚠️ 初回セットアップ必須</strong><br>
+                ゲーム機能を使用する前に設定の初期化が必要です。
+            </div>
+            <div style="margin-bottom: 15px; padding: 10px; background: #f8d7da; border-radius: 5px;">
+                <strong>現在の設定:</strong><br>
+                <div id="config-status" style="margin-top: 5px;">未初期化</div>
+                <div id="admin-address" style="margin-top: 5px; font-family: monospace; font-size: 12px;"></div>
+            </div>
+            <button id="init-config" class="button" style="background: #dc3545;" disabled>設定初期化</button>
+            <button id="create-reward-mint" class="button" style="background: #dc3545;" disabled>報酬ミント作成</button>
         </div>
 
         <!-- アクション -->
         <div class="status-card">
             <h3>⚡ 基本アクション</h3>
             <button id="init-user" class="button" disabled>ユーザー初期化</button>
-            <button id="buy-facility" class="button" disabled>施設購入</button>
+            <button id="buy-farm-space" class="button" disabled>ファームスペース購入</button>
             <button id="claim-rewards" class="button" disabled>報酬請求</button>
             <button id="refresh-data" class="button">データ更新</button>
-            <button id="airdrop-sol" class="button" disabled>💰 SOLエアドロップ (開発用)</button>
         </div>
 
         <!-- 紹介システム -->
@@ -240,11 +280,11 @@
             <button id="claim-referral-rewards" class="button" disabled>紹介報酬請求</button>
         </div>
 
-        <!-- 施設管理 -->
+        <!-- ファームスペース管理 -->
         <div class="status-card">
-            <h3>🔧 施設管理</h3>
-            <button id="upgrade-facility" class="button" disabled>施設アップグレード</button>
-            <button id="add-machine" class="button" disabled>マシン追加</button>
+            <h3>🔧 ファームスペース管理</h3>
+            <button id="upgrade-farm-space" class="button" disabled>アップグレード開始</button>
+            <button id="complete-upgrade" class="button" disabled>アップグレード完了</button>
         </div>
 
         <!-- 転送システム -->
@@ -256,11 +296,11 @@
             </div>
         </div>
 
-        <!-- ミステリーボックス -->
+        <!-- シードパック -->
         <div class="status-card">
-            <h3>📦 ミステリーボックス</h3>
-            <button id="purchase-mystery-box" class="button" disabled>ミステリーボックス購入</button>
-            <button id="open-mystery-box" class="button" disabled>ミステリーボックス開封</button>
+            <h3>📦 シードパック</h3>
+            <button id="purchase-seed-pack" class="button" disabled>シードパック購入</button>
+            <button id="open-seed-pack" class="button" disabled>シードパック開封</button>
             <div style="margin-top: 10px; font-size: 12px; color: #666;">
                 ※ シードを獲得してGrow Powerを強化しよう！
             </div>

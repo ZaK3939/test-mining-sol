@@ -15,18 +15,20 @@ export interface UserStateAccount {
   owner: PublicKey;
   totalGrowPower: BN;
   lastHarvestTime: BN;
-  hasFacility: boolean;
+  hasFarmSpace: boolean;
   referrer: PublicKey | null;
   pendingReferralRewards: BN;
   reserve: number[];
 }
 
-export interface FacilityAccount {
+export interface FarmSpaceAccount {
   owner: PublicKey;
-  machineCount: number;
+  level: number;
+  capacity: number;
+  seedCount: number;
   totalGrowPower: BN;
-  facilitySize: number;
-  maxCapacity: number;
+  upgradeStartTime: BN;
+  upgradeTargetLevel: number;
   reserve: number[];
 }
 
@@ -36,14 +38,13 @@ export interface ConfigAccount {
   nextHalvingTime: BN;
   admin: PublicKey;
   treasury: PublicKey;
-  mysteryBoxCost: BN;
-  facilityCounter: BN;
-  mysteryBoxCounter: BN;
+  seedPackCost: BN;
   seedCounter: BN;
+  seedPackCounter: BN;
   reserve: number[];
 }
 
-export interface MysteryBoxAccount {
+export interface SeedPackAccount {
   owner: PublicKey;
   id: BN;
   isOpened: boolean;
@@ -83,19 +84,19 @@ export function isUserStateAccount(account: unknown): account is UserStateAccoun
     'owner' in account &&
     'totalGrowPower' in account &&
     'lastHarvestTime' in account &&
-    'hasFacility' in account
+    'hasFarmSpace' in account
   );
 }
 
-export function isFacilityAccount(account: unknown): account is FacilityAccount {
+export function isFarmSpaceAccount(account: unknown): account is FarmSpaceAccount {
   return (
     typeof account === 'object' &&
     account !== null &&
     'owner' in account &&
-    'machineCount' in account &&
-    'totalGrowPower' in account &&
-    'facilitySize' in account &&
-    'maxCapacity' in account
+    'level' in account &&
+    'capacity' in account &&
+    'seedCount' in account &&
+    'totalGrowPower' in account
   );
 }
 
@@ -129,21 +130,21 @@ export function safeBNToNumber(bn?: BN | null): number {
   if (!bn) {
     return 0;
   }
-  
+
   const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
   const bnNumber = bn.toNumber();
-  
+
   if (bnNumber > MAX_SAFE_INTEGER) {
     throw new Error(`BN value ${bn.toString()} exceeds MAX_SAFE_INTEGER`);
   }
-  
+
   return bnNumber;
 }
 
 // Helper function for safe token amount conversion
 export function formatTokenAmount(amount: BN, decimals: number = 6): TokenAmount {
   const uiAmount = amount.toNumber() / Math.pow(10, decimals);
-  
+
   return {
     amount,
     decimals,

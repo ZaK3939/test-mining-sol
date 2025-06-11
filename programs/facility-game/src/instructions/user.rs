@@ -26,10 +26,10 @@ pub fn init_user(ctx: Context<InitUser>, referrer: Option<Pubkey>) -> Result<()>
     user_state.owner = ctx.accounts.user.key();
     user_state.total_grow_power = 0;
     user_state.last_harvest_time = Clock::get()?.unix_timestamp;
-    user_state.has_facility = false;
+    user_state.has_farm_space = false;
     user_state.referrer = referrer;
     user_state.pending_referral_rewards = 0;
-    user_state.reserve = [0; 55];
+    user_state.reserve = [0; 32];
 
     msg!("User initialized: {} with referrer: {:?}", ctx.accounts.user.key(), referrer);
     Ok(())

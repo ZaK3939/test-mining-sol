@@ -19,7 +19,7 @@ import type { WalletState, GameState, DetailedGameState, NetworkInfo } from './t
 
 // Bufferをグローバルに設定
 if (typeof window !== 'undefined') {
-  (window as any).Buffer = Buffer;
+  (window as unknown as { Buffer: typeof Buffer }).Buffer = Buffer;
 }
 
 // グローバル変数でPhantomウォレットの型を拡張
@@ -31,8 +31,8 @@ declare global {
       disconnect(): Promise<void>;
       publicKey: PublicKey | null;
       isConnected: boolean;
-      signTransaction: (transaction: any) => Promise<any>;
-      signAllTransactions: (transactions: any[]) => Promise<any[]>;
+      signTransaction: (transaction: unknown) => Promise<unknown>;
+      signAllTransactions: (transactions: unknown[]) => Promise<unknown[]>;
     };
   }
 }
@@ -172,7 +172,7 @@ export class SolanaService {
         userInitialized: false,
         hasFacility: false,
         growPower: 0,
-        pendingReferralRewards: 0
+        pendingReferralRewards: 0,
       };
     }
 
@@ -198,7 +198,9 @@ export class SolanaService {
         machineCount: detailedState.facility.machineCount,
         totalGrowPower: detailedState.facility.totalGrowPower.toNumber(),
       };
-      logger.success(`施設確認: サイズ${detailedState.facility.facilitySize}, マシン${detailedState.facility.machineCount}`);
+      logger.success(
+        `施設確認: サイズ${detailedState.facility.facilitySize}, マシン${detailedState.facility.machineCount}`
+      );
     } else {
       logger.info('施設未所有');
     }
@@ -298,21 +300,24 @@ export class SolanaService {
     return this.anchorClient;
   }
 
-  // 開発用SOLエアドロップ（ローカル環境のみ）
+  // 開発用SOLエアドロップ（devnet・ローカル環境）
   async airdropSol(amount: number = NETWORK_CONSTANTS.DEFAULT_AIRDROP_AMOUNT): Promise<void> {
     if (!this.wallet.publicKey) {
       throw new Error('ウォレットが接続されていません');
     }
 
-    // ローカル環境でのみ実行
-    if (!config.rpcUrl.includes('localhost') && !config.rpcUrl.includes('127.0.0.1')) {
-      throw new Error('エアドロップはローカル環境でのみ利用可能です');
+    // mainnet以外で実行可能
+    if (config.network === 'mainnet-beta') {
+      throw new Error('エアドロップはmainnetでは利用できません');
     }
 
     try {
       logger.info(`💰 ${amount} SOL をエアドロップ中...`);
 
-      const signature = await this.connection.requestAirdrop(
+      // エアドロップ用に公式devnet RPCを使用
+      const airdropConnection = new Connection('https://api.devnet.solana.com', 'confirmed');
+
+      const signature = await airdropConnection.requestAirdrop(
         this.wallet.publicKey,
         amount * LAMPORTS_PER_SOL
       );

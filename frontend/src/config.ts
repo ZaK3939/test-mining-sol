@@ -26,7 +26,7 @@ function getConfig(): AppConfig {
   const config: AppConfig = {
     programId: '7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB',
     network: 'devnet',
-    rpcUrl: heliusApiKey 
+    rpcUrl: heliusApiKey
       ? `https://devnet.helius-rpc.com/?api-key=${heliusApiKey}`
       : 'https://api.devnet.solana.com',
   };

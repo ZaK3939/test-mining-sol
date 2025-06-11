@@ -2,6 +2,7 @@
   "name": "facility-game-frontend",
   "version": "1.0.0",
   "description": "Solana Facility Game Frontend Demo",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "bunx vite",
@@ -12,11 +13,19 @@
     "test": "bunx vitest",
     "test:ui": "bunx vitest --ui",
     "test:run": "bunx vitest run",
+    "test:coverage": "bunx vitest run --coverage",
+    "test:watch": "bunx vitest --watch",
+    "test:debug": "VERBOSE_TESTS=true bunx vitest --reporter=verbose",
+    "test:integration": "bunx vitest run --config src/test/vitest.config.ts src/test/examples/",
+    "test:unit": "bunx vitest run src/**/*.test.ts",
+    "test:performance": "bunx vitest run --reporter=json --outputFile=test-results.json",
+    "test:ci": "bunx vitest run --coverage --reporter=json --outputFile=test-results.json",
     "format": "bunx prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
     "format:check": "bunx prettier --check \"src/**/*.{ts,tsx,js,jsx,json}\"",
     "lint": "bunx eslint \"src/**/*.{ts,tsx,js,jsx}\"",
     "lint:fix": "bunx eslint \"src/**/*.{ts,tsx,js,jsx}\" --fix",
-    "code-check": "bun run type-check && bun run lint && bun run format:check"
+    "code-check": "bun run type-check && bun run lint && bun run format:check",
+    "quality-check": "bun run code-check && bun run test:run"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
@@ -29,14 +38,18 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
     "@vitest/ui": "^1.0.0",
-    "jsdom": "^24.0.0",
     "eslint": "^9.0.0",
     "@eslint/js": "^9.0.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0"
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "happy-dom": "^13.0.0",
+    "jsdom": "^24.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0",
+    "vitest-mock-extended": "^1.0.0"
   }
 }

@@ -6,7 +6,7 @@ import { Buffer } from 'buffer';
 
 export interface PDAs {
   userState: PublicKey;
-  facility: PublicKey;
+  farmSpace: PublicKey;
   config: PublicKey;
   rewardMint: PublicKey;
   mintAuthority: PublicKey;
@@ -30,8 +30,8 @@ export class PDAHelper {
       programId
     );
 
-    const [facility] = await PublicKey.findProgramAddress(
-      [Buffer.from('facility'), userPublicKey.toBuffer()],
+    const [farmSpace] = await PublicKey.findProgramAddress(
+      [Buffer.from('farm_space'), userPublicKey.toBuffer()],
       programId
     );
 
@@ -47,14 +47,11 @@ export class PDAHelper {
       programId
     );
 
-    const [treasury] = await PublicKey.findProgramAddress(
-      [Buffer.from('treasury')],
-      programId
-    );
+    const [treasury] = await PublicKey.findProgramAddress([Buffer.from('treasury')], programId);
 
     return {
       userState,
-      facility,
+      farmSpace,
       config,
       rewardMint,
       mintAuthority,
@@ -75,12 +72,12 @@ export class PDAHelper {
     );
   }
 
-  static async getFacilityPDA(
+  static async getFarmSpacePDA(
     userPublicKey: PublicKey,
     programId: PublicKey
   ): Promise<[PublicKey, number]> {
     return await PublicKey.findProgramAddress(
-      [Buffer.from('facility'), userPublicKey.toBuffer()],
+      [Buffer.from('farm_space'), userPublicKey.toBuffer()],
       programId
     );
   }

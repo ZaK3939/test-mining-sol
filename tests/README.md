@@ -1,226 +1,270 @@
-# Facility Game Test Suite
+# Farm Game Test Suite
 
-This directory contains a comprehensive test suite for the Facility Game smart contract, covering functionality, security, and performance aspects.
+This directory contains comprehensive tests for the Farm Game Solana program.
 
-## Test Files
+## Test Structure
 
-### 1. `facility-game.ts`
-Basic integration tests covering the core functionality:
-- System initialization (config, mint creation)
-- User lifecycle (initialization, facility purchase)
-- Reward claiming mechanism
-- Basic error scenarios
+### Organization
+```
+tests/
+├── helpers/                    # Test utilities and shared code
+│   ├── test-setup.ts          # TestEnvironment class and setup utilities
+│   ├── assertions.ts          # Custom assertion functions
+│   └── test-data.ts           # Test data generators and mocks
+├── integration/               # Integration tests
+│   ├── core-game-mechanics.test.ts    # Core game functionality
+│   ├── referral-system.test.ts        # Referral reward system
+│   └── halving-mechanism.test.ts      # Halving mechanism tests
+└── farm-game.test.ts          # Main test entry point
+```
 
-### 2. `comprehensive-tests.ts`
-Complete end-to-end tests for all 11 instructions:
-- User management & referral system
-- Facility management (purchase, upgrade, machine addition)
-- Reward system with referral distribution
-- Transfer system with 2% fees
-- Mystery box purchase and opening
-- Error scenarios and edge cases
+### Test Categories
 
-### 3. `security-tests.ts`
-Security-focused tests including:
-- Access control verification
-- Input validation
-- PDA security and ownership constraints
-- Reentrancy protection
-- Token security measures
-- Mystery box security
+1. **Core Game Mechanics** (`core-game-mechanics.test.ts`)
+   - System initialization
+   - User management
+   - Farm space management
+   - Basic reward system
+   - State consistency
 
-### 4. `performance-tests.ts`
-Performance benchmarking and stress tests:
-- Core instruction performance measurement
-- Reward system performance under various conditions
-- Transfer system benchmarks
-- Mystery box operation timing
-- Concurrent user stress testing
-- Large-scale operation handling
+2. **Referral System** (`referral-system.test.ts`)
+   - Multi-level referral chains
+   - Referral reward distribution
+   - Protocol address exclusion
+   - Edge cases and performance
 
-### 5. `test-config.ts`
-Shared test utilities and configuration:
-- Test constants and thresholds
-- Utility functions for common operations
-- Performance tracking utilities
-- Security testing helpers
-- Error matchers for common scenarios
+3. **Halving Mechanism** (`halving-mechanism.test.ts`)
+   - Single and multiple halving events
+   - Cross-halving reward calculations
+   - Edge cases and system integration
 
 ## Running Tests
 
 ### Prerequisites
-1. Start local Solana validator:
+1. Start local Solana test validator:
    ```bash
-   solana-test-validator
+   solana-test-validator --reset
    ```
 
-2. Install dependencies:
+2. Configure Solana CLI for localhost:
    ```bash
-   yarn install
+   solana config set --url localhost
    ```
 
 ### Test Commands
 
-#### Basic Tests
+#### Run All Tests
 ```bash
-# Run core functionality tests
-yarn test:basic
-
-# Run comprehensive integration tests
-yarn test:comprehensive
+anchor test --skip-local-validator
 ```
 
-#### Advanced Tests
+#### Run Specific Test Suite
 ```bash
-# Run security tests
-yarn test:security
+# Core game mechanics only
+anchor test --skip-local-validator tests/integration/core-game-mechanics.test.ts
 
-# Run performance benchmarks
-yarn test:performance
+# Referral system only
+anchor test --skip-local-validator tests/integration/referral-system.test.ts
+
+# Halving mechanism only
+anchor test --skip-local-validator tests/integration/halving-mechanism.test.ts
 ```
 
-#### Test Suites
+#### Run with Verbose Output
 ```bash
-# Run all unit/integration tests
-yarn test:unit
-
-# Run all advanced tests (security + performance)
-yarn test:advanced
-
-# Run complete test suite
-yarn test:all
-
-# Use Anchor's built-in test runner
-anchor test
+anchor test --skip-local-validator -- --reporter spec
 ```
 
-## Test Coverage
+## Test Utilities
 
-### Instructions Tested
-- ✅ `initialize_config` - System initialization
-- ✅ `create_reward_mint` - $WEED token creation with metadata
-- ✅ `init_user` - User account initialization with referrals
-- ✅ `buy_facility` - Facility purchase and setup
-- ✅ `claim_reward` - Time-based reward claiming
-- ✅ `distribute_referral_reward` - Referral reward distribution
-- ✅ `claim_referral_rewards` - Referral reward claiming
-- ✅ `upgrade_facility` - Facility size upgrades
-- ✅ `add_machine` - Machine addition to facilities
-- ✅ `transfer_with_fee` - 2% fee token transfers
-- ✅ `purchase_mystery_box` - Mystery box purchasing
-- ✅ `open_mystery_box` - Mystery box opening and seed generation
+### TestEnvironment Class
+The `TestEnvironment` class provides a high-level interface for test setup and execution:
 
-### Security Aspects Tested
-- ✅ Access control enforcement
-- ✅ PDA ownership verification
-- ✅ Input validation and overflow protection
-- ✅ Token account ownership verification
-- ✅ Unauthorized operation prevention
-- ✅ Reentrancy protection
-- ✅ Mystery box ownership constraints
+```typescript
+import { TestEnvironment } from './helpers/test-setup';
 
-### Performance Metrics
-- ✅ Individual instruction timing
-- ✅ Concurrent operation handling
-- ✅ Large-scale stress testing
-- ✅ Memory and compute efficiency
-- ✅ Network throughput testing
+// Setup test environment
+const testEnv = await TestEnvironment.setup();
+await testEnv.initializeSystem();
 
-## Expected Performance Thresholds
+// Create test user
+const userData = await testEnv.createUserTestData(0);
+await testEnv.buyFarmSpace(userData);
 
-| Operation | Expected Time | Max Acceptable |
-|-----------|---------------|----------------|
-| User Init | < 1s | 3s |
-| Facility Purchase | < 1s | 3s |
-| Reward Claim | < 2s | 5s |
-| Transfer w/ Fee | < 1s | 4s |
-| Mystery Box Ops | < 3s | 5s |
-| Concurrent Claims (5 users) | < 10s | 15s |
+// Test operations
+const reward = await testEnv.claimRewards(userData);
+```
 
-## Security Test Scenarios
+### Assertions
+Custom assertion functions for game-specific validations:
 
-### Access Control
-- Non-admin config initialization attempts
-- Cross-user reward claiming attempts
-- Unauthorized facility upgrades
-- Invalid PDA usage
+```typescript
+import { GameAssertions } from './helpers/assertions';
 
-### Input Validation
-- Overflow/underflow protection
-- Negative value handling
-- Zero amount operations
-- Large number processing
+// Assert token balance
+await GameAssertions.assertTokenBalance(
+  connection, 
+  tokenAccount, 
+  expectedAmount, 
+  tolerance
+);
 
-### Token Security
-- Unauthorized minting attempts
-- Token account ownership verification
-- Transfer constraint enforcement
+// Assert referral reward percentages
+GameAssertions.assertReferralReward(
+  baseReward, 
+  actualReward, 
+  percentage
+);
+
+// Assert game state
+GameAssertions.assertUserState(userState, expected);
+GameAssertions.assertFarmSpace(farmSpace, expected);
+```
+
+### Test Data Generators
+Utilities for generating test scenarios:
+
+```typescript
+import { TestDataGenerator } from './helpers/test-data';
+
+// Generate referral chain
+const chain = TestDataGenerator.generateReferralChain(5);
+
+// Generate upgrade scenarios
+const scenarios = TestDataGenerator.generateFarmUpgradeScenarios();
+
+// Generate halving scenarios
+const halvingTests = TestDataGenerator.generateHalvingScenarios();
+```
+
+## Test Configuration
+
+### Constants
+Test constants are defined in `helpers/test-setup.ts`:
+
+```typescript
+export const TEST_CONSTANTS = {
+  BASE_RATE: 100,
+  HALVING_INTERVAL: 6 * 24 * 60 * 60, // 6 days
+  LEVEL1_REFERRAL_PERCENTAGE: 10,
+  LEVEL2_REFERRAL_PERCENTAGE: 5,
+  // ... more constants
+};
+```
+
+### Timeouts
+Tests involving time-based mechanics (halving, rewards) have extended timeouts:
+- Default: 30 seconds
+- Halving tests: 2-5 minutes
+- Performance tests: 30 seconds - 2 minutes
+
+## Test Data and Scenarios
+
+### Referral Chains
+Tests support various referral relationship patterns:
+- Linear chains (A → B → C → D)
+- Star patterns (A ← B, C, D, E)
+- Complex networks with multiple levels
+
+### Halving Scenarios
+- Short intervals for testing (30-60 seconds)
+- Multiple consecutive halvings
+- Cross-halving reward calculations
+- Zero grow power edge cases
+
+### Performance Tests
+- Concurrent operations (5-50 users)
+- Large referral networks (10-100 users)
+- Stress testing with maximum limits
+
+## Best Practices
+
+### Writing New Tests
+1. Use `TestEnvironment` for setup
+2. Use `GameAssertions` for validations
+3. Use `TestDataGenerator` for test data
+4. Follow the existing test structure
+5. Add appropriate timeouts for time-based tests
+
+### Test Organization
+- Group related tests in `describe` blocks
+- Use descriptive test names
+- Include setup and teardown as needed
+- Document complex test scenarios
+
+### Performance Considerations
+- Use parallel execution where possible
+- Clean up resources between tests
+- Use reasonable timeouts
+- Consider validator limitations
 
 ## Troubleshooting
 
 ### Common Issues
 
-**Connection Refused Error**
-```
-Error: Connection refused (os error 61)
-```
-Solution: Start the local validator with `solana-test-validator`
+1. **Validator Connection Issues**
+   - Ensure `solana-test-validator` is running
+   - Check Solana CLI configuration
+   - Verify localhost is accessible
 
-**Insufficient SOL Error**
-Solution: Ensure test accounts have sufficient SOL for transactions
+2. **Timeout Errors**
+   - Increase test timeouts for time-based tests
+   - Check validator performance
+   - Reduce test complexity if needed
 
-**Timeout Errors**
-Solution: Increase timeout values in test configuration or check network connectivity
+3. **Account Initialization Errors**
+   - Ensure proper account setup order
+   - Check for duplicate initializations
+   - Verify PDA derivations
 
-**Metadata Program Errors**
-Solution: These are often non-fatal in test environments and can be ignored
+4. **Token Account Issues**
+   - Ensure token accounts are created before use
+   - Check mint authority configurations
+   - Verify sufficient balances
 
-### Test Environment Setup
+### Debug Tips
+- Use `console.log` for intermediate values
+- Check on-chain state between operations
+- Verify transaction signatures and logs
+- Use Solana Explorer for transaction details
 
-1. **Local Validator Configuration**:
-   ```bash
-   solana config set --url localhost
-   solana-test-validator --reset
-   ```
+## Contributing
 
-2. **Account Funding**:
-   ```bash
-   solana airdrop 5 <WALLET_ADDRESS>
-   ```
+When adding new tests:
+1. Follow the existing structure and patterns
+2. Add appropriate documentation
+3. Ensure tests are deterministic
+4. Include both positive and negative test cases
+5. Update this README if adding new test categories
 
-3. **Program Deployment**:
-   ```bash
-   anchor build
-   anchor deploy
-   ```
+## Legacy Test Files
 
-## Contributing to Tests
+The following legacy test files are maintained for compatibility but should not be used for new tests:
+- `basic-farm-game.ts` - Superseded by core-game-mechanics.test.ts
+- `comprehensive-facility-game.ts` - Old naming, functionality moved to new structure
+- `facility-game.ts` - Basic tests, superseded by integration tests
+- `referral-rewards.ts` - Superseded by referral-system.test.ts
 
-When adding new features to the smart contract:
+## Performance Benchmarks
 
-1. Add basic functionality tests to `comprehensive-tests.ts`
-2. Add security tests to `security-tests.ts` 
-3. Add performance benchmarks to `performance-tests.ts`
-4. Update this README with new test coverage
-5. Ensure all tests pass before submitting
+Expected performance thresholds:
 
-### Test Writing Guidelines
+| Operation | Expected Time | Max Acceptable |
+|-----------|---------------|----------------|
+| User Init | < 1s | 3s |
+| Farm Purchase | < 1s | 3s |
+| Reward Claim | < 2s | 5s |
+| Referral Distribution | < 1s | 4s |
+| Halving Calculation | < 3s | 5s |
+| Concurrent Claims (5 users) | < 10s | 15s |
 
-- Use descriptive test names that explain the scenario
-- Include both positive and negative test cases
-- Add performance measurements for new operations
-- Test edge cases and error conditions
-- Use the utility functions from `test-config.ts`
-- Follow the established test structure and naming conventions
+## Security Coverage
 
-## Performance Monitoring
-
-The test suite automatically tracks and reports performance metrics:
-
-- Average execution time per instruction
-- Min/max execution times
-- 95th and 99th percentile measurements
-- Concurrent operation benchmarks
-- Memory usage patterns
-
-Results are displayed in a summary table after test completion.
+The test suite covers:
+- ✅ Access control enforcement
+- ✅ PDA ownership verification
+- ✅ Input validation and overflow protection
+- ✅ Token account security
+- ✅ Protocol address exclusion
+- ✅ Referral system integrity
+- ✅ Halving mechanism accuracy

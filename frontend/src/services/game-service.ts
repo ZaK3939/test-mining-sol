@@ -5,10 +5,10 @@ import { PublicKey } from '@solana/web3.js';
 import { AnchorClient } from '../anchor-client';
 import { SolanaService } from '../solana';
 import { logger } from '../logger';
-import { 
-  executeTransaction, 
+import {
+  executeTransaction,
   executeTransactionWithSpecialReturns,
-  requireWalletConnection 
+  requireWalletConnection,
 } from '../utils/error-handler';
 import { SUCCESS_MESSAGES, GAME_CONSTANTS } from '../utils/constants';
 import type { DetailedGameState } from '../types';
@@ -36,23 +36,52 @@ export class GameService {
     return this.anchorClient;
   }
 
+  // Config initialization (admin only)
+  async initializeConfig(callbacks: UICallbacks): Promise<string> {
+    return await requireWalletConnection(
+      this.solanaService.getWalletState(),
+      async () => {
+        return await executeTransaction(() => this.getAnchorClient().initializeConfig(), {
+          operationName: '設定初期化',
+          successMessage: '設定が初期化されました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
+      },
+      callbacks.showError
+    );
+  }
+
+  // Reward mint creation (admin only)
+  async createRewardMint(callbacks: UICallbacks): Promise<string> {
+    return await requireWalletConnection(
+      this.solanaService.getWalletState(),
+      async () => {
+        return await executeTransaction(() => this.getAnchorClient().createRewardMint(), {
+          operationName: '報酬ミント作成',
+          successMessage: '報酬ミントが作成されました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
+      },
+      callbacks.showError
+    );
+  }
+
   // User initialization
   async initializeUser(callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransactionWithSpecialReturns(
-          () => this.getAnchorClient().initUser(),
-          {
-            operationName: 'ユーザー初期化',
-            successMessage: SUCCESS_MESSAGES.USER_INITIALIZED,
-            specialReturns: {
-              'already_initialized': 'ユーザーアカウントは既に初期化済みです！'
-            },
-            onSuccess: callbacks.updateGameState,
-            ...callbacks
-          }
-        );
+        return await executeTransactionWithSpecialReturns(() => this.getAnchorClient().initUser(), {
+          operationName: 'ユーザー初期化',
+          successMessage: SUCCESS_MESSAGES.USER_INITIALIZED,
+          specialReturns: {
+            already_initialized: 'ユーザーアカウントは既に初期化済みです！',
+          },
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
@@ -69,10 +98,10 @@ export class GameService {
             operationName: '紹介者付きユーザー初期化',
             successMessage: '紹介者付きでユーザーアカウントが初期化されました！',
             specialReturns: {
-              'already_initialized': 'ユーザーアカウントは既に初期化済みです！'
+              already_initialized: 'ユーザーアカウントは既に初期化済みです！',
             },
             onSuccess: callbacks.updateGameState,
-            ...callbacks
+            ...callbacks,
           }
         );
       },
@@ -80,21 +109,21 @@ export class GameService {
     );
   }
 
-  // Facility purchase
-  async purchaseFacility(callbacks: UICallbacks): Promise<string> {
+  // Farm space purchase
+  async purchaseFarmSpace(callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
         return await executeTransactionWithSpecialReturns(
-          () => this.getAnchorClient().buyFacility(),
+          () => this.getAnchorClient().buyFarmSpace(),
           {
-            operationName: '施設購入',
-            successMessage: `施設の購入が完了しました！Grow Power: ${GAME_CONSTANTS.INITIAL_GROW_POWER}`,
+            operationName: '農場スペース購入',
+            successMessage: `農場スペースの購入が完了しました！初期シードが付与されました`,
             specialReturns: {
-              'already_owned': '施設は既に所有済みです！'
+              already_owned: '農場スペースは既に所有済みです！',
             },
             onSuccess: callbacks.updateGameState,
-            ...callbacks
+            ...callbacks,
           }
         );
       },
@@ -107,15 +136,12 @@ export class GameService {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(
-          () => this.getAnchorClient().claimRewards(),
-          {
-            operationName: '報酬請求',
-            successMessage: SUCCESS_MESSAGES.REWARDS_CLAIMED,
-            onSuccess: callbacks.updateGameState,
-            ...callbacks
-          }
-        );
+        return await executeTransaction(() => this.getAnchorClient().claimRewards(), {
+          operationName: '報酬請求',
+          successMessage: SUCCESS_MESSAGES.REWARDS_CLAIMED,
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
@@ -126,60 +152,87 @@ export class GameService {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(
-          () => this.getAnchorClient().claimReferralRewards(),
-          {
-            operationName: '紹介報酬請求',
-            successMessage: '紹介報酬の請求が完了しました！',
-            onSuccess: callbacks.updateGameState,
-            ...callbacks
-          }
-        );
+        return await executeTransaction(() => this.getAnchorClient().claimReferralRewards(), {
+          operationName: '紹介報酬請求',
+          successMessage: '紹介報酬の請求が完了しました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
   }
 
-  // Facility upgrade
-  async upgradeFacility(callbacks: UICallbacks): Promise<string> {
+  // Farm space upgrade (start upgrade with 24h cooldown)
+  async upgradeFarmSpace(callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(
-          () => this.getAnchorClient().upgradeFacility(),
-          {
-            operationName: '施設アップグレード',
-            successMessage: '施設のアップグレードが完了しました！',
-            onSuccess: callbacks.updateGameState,
-            ...callbacks
-          }
-        );
+        return await executeTransaction(() => this.getAnchorClient().upgradeFarmSpace(), {
+          operationName: '農場スペースアップグレード開始',
+          successMessage: '農場スペースのアップグレードを開始しました！24時間後に完了できます',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
   }
 
-  // Add machine
-  async addMachine(callbacks: UICallbacks): Promise<string> {
+  // Complete farm space upgrade (after 24h cooldown)
+  async completeFarmSpaceUpgrade(callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(
-          () => this.getAnchorClient().addMachine(),
-          {
-            operationName: 'マシン追加',
-            successMessage: 'マシンの追加が完了しました！',
-            onSuccess: callbacks.updateGameState,
-            ...callbacks
-          }
-        );
+        return await executeTransaction(() => this.getAnchorClient().completeFarmSpaceUpgrade(), {
+          operationName: '農場スペースアップグレード完了',
+          successMessage: '農場スペースのアップグレードが完了しました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
+      },
+      callbacks.showError
+    );
+  }
+
+  // Plant seed in farm space
+  async plantSeed(seedId: number, callbacks: UICallbacks): Promise<string> {
+    return await requireWalletConnection(
+      this.solanaService.getWalletState(),
+      async () => {
+        return await executeTransaction(() => this.getAnchorClient().plantSeed(seedId), {
+          operationName: 'シード植え付け',
+          successMessage: 'シードの植え付けが完了しました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
+      },
+      callbacks.showError
+    );
+  }
+
+  // Remove seed from farm space
+  async removeSeed(seedId: number, callbacks: UICallbacks): Promise<string> {
+    return await requireWalletConnection(
+      this.solanaService.getWalletState(),
+      async () => {
+        return await executeTransaction(() => this.getAnchorClient().removeSeed(seedId), {
+          operationName: 'シード除去',
+          successMessage: 'シードの除去が完了しました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
   }
 
   // Token transfer with fee
-  async transferTokens(recipient: PublicKey, amount: number, callbacks: UICallbacks): Promise<string> {
+  async transferTokens(
+    recipient: PublicKey,
+    amount: number,
+    callbacks: UICallbacks
+  ): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
@@ -189,7 +242,7 @@ export class GameService {
             operationName: 'トークン転送',
             successMessage: 'トークンの転送が完了しました！',
             onSuccess: callbacks.updateGameState,
-            ...callbacks
+            ...callbacks,
           }
         );
       },
@@ -197,39 +250,81 @@ export class GameService {
     );
   }
 
-  // Mystery box purchase
-  async purchaseMysteryBox(callbacks: UICallbacks): Promise<string> {
+  // Seed pack purchase
+  async purchaseSeedPack(quantity: number, callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(
-          () => this.getAnchorClient().purchaseMysteryBox(),
-          {
-            operationName: 'ミステリーボックス購入',
-            successMessage: 'ミステリーボックスの購入が完了しました！',
-            onSuccess: callbacks.updateGameState,
-            ...callbacks
-          }
-        );
+        return await executeTransaction(() => this.getAnchorClient().purchaseSeedPack(quantity), {
+          operationName: 'シードパック購入',
+          successMessage: `シードパック${quantity}個の購入が完了しました！`,
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
   }
 
-  // Mystery box opening
-  async openMysteryBox(mysteryBoxId: number, callbacks: UICallbacks): Promise<string> {
+  // Seed pack opening
+  async openSeedPack(packId: number, quantity: number, callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(
-          () => this.getAnchorClient().openMysteryBox(mysteryBoxId),
-          {
-            operationName: 'ミステリーボックス開封',
-            successMessage: 'ミステリーボックスの開封が完了しました！',
-            onSuccess: callbacks.updateGameState,
-            ...callbacks
-          }
-        );
+        return await executeTransaction(() => this.getAnchorClient().openSeedPack(packId, quantity), {
+          operationName: 'シードパック開封',
+          successMessage: 'シードパックの開封が完了しました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
+      },
+      callbacks.showError
+    );
+  }
+
+  // Create invite code
+  async createInviteCode(inviteCode: string, callbacks: UICallbacks): Promise<string> {
+    return await requireWalletConnection(
+      this.solanaService.getWalletState(),
+      async () => {
+        return await executeTransaction(() => this.getAnchorClient().createInviteCode(inviteCode), {
+          operationName: '招待コード作成',
+          successMessage: `招待コード「${inviteCode}」が作成されました！`,
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
+      },
+      callbacks.showError
+    );
+  }
+
+  // Use invite code
+  async useInviteCode(inviteCode: string, callbacks: UICallbacks): Promise<string> {
+    return await requireWalletConnection(
+      this.solanaService.getWalletState(),
+      async () => {
+        return await executeTransaction(() => this.getAnchorClient().useInviteCode(inviteCode), {
+          operationName: '招待コード使用',
+          successMessage: `招待コード「${inviteCode}」を使用してアカウントを作成しました！`,
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
+      },
+      callbacks.showError
+    );
+  }
+
+  // Distribute referral rewards
+  async distributeReferralRewards(baseReward: number, callbacks: UICallbacks): Promise<string> {
+    return await requireWalletConnection(
+      this.solanaService.getWalletState(),
+      async () => {
+        return await executeTransaction(() => this.getAnchorClient().distributeReferralRewards(baseReward), {
+          operationName: '紹介報酬配布',
+          successMessage: '紹介報酬の配布が完了しました！',
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
@@ -240,18 +335,15 @@ export class GameService {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(
-          () => this.solanaService.airdropSol(amount),
-          {
-            operationName: 'SOLエアドロップ',
-            successMessage: SUCCESS_MESSAGES.AIRDROP_COMPLETED(amount),
-            onSuccess: async () => {
-              // Update wallet display instead of game state
-              // This would be handled by the UI layer
-            },
-            ...callbacks
-          }
-        );
+        return await executeTransaction(() => this.solanaService.airdropSol(amount), {
+          operationName: 'SOLエアドロップ',
+          successMessage: SUCCESS_MESSAGES.AIRDROP_COMPLETED(amount),
+          onSuccess: async () => {
+            // Update wallet display instead of game state
+            // This would be handled by the UI layer
+          },
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
@@ -263,30 +355,32 @@ export class GameService {
     if (!walletState.connected || !walletState.publicKey) {
       return {
         userState: null,
-        facility: null,
+        farmSpace: null,
         config: null,
         tokenBalance: 0,
         userInitialized: false,
-        hasFacility: false,
+        hasFarmSpace: false,
         growPower: 0,
-        pendingReferralRewards: 0
+        pendingReferralRewards: 0,
       };
     }
 
     try {
       return await this.getAnchorClient().fetchCompleteGameState(walletState.publicKey);
     } catch (error) {
-      logger.error(`ゲーム状態取得エラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `ゲーム状態取得エラー: ${error instanceof Error ? error.message : String(error)}`
+      );
       // Return default state on error
       return {
         userState: null,
-        facility: null,
+        farmSpace: null,
         config: null,
         tokenBalance: 0,
         userInitialized: false,
-        hasFacility: false,
+        hasFarmSpace: false,
         growPower: 0,
-        pendingReferralRewards: 0
+        pendingReferralRewards: 0,
       };
     }
   }

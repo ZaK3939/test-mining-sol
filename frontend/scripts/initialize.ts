@@ -19,7 +19,7 @@ const RPC_URL = 'http://localhost:8899';
 
 // IDLを読み込む
 function loadIDL() {
-  const idlPath = path.join(process.cwd(), 'src/idl/facility_game.json');
+  const idlPath = path.join(process.cwd(), 'src/idl/farm_game.json');
   const idlString = fs.readFileSync(idlPath, 'utf8');
   return JSON.parse(idlString);
 }
@@ -33,7 +33,7 @@ function loadAdminKeypair(): Keypair {
       const privateKey = JSON.parse(privateKeyString);
       return Keypair.fromSecretKey(new Uint8Array(privateKey));
     }
-    
+
     // 次にローカルのSolanaキーペアファイルをチェック
     const keypairPath = path.join(os.homedir(), '.config', 'solana', 'id.json');
     if (fs.existsSync(keypairPath)) {
@@ -41,13 +41,12 @@ function loadAdminKeypair(): Keypair {
       logger.info(`🔑 キーペアを読み込みました: ${keypairPath}`);
       return Keypair.fromSecretKey(new Uint8Array(keypairData));
     }
-    
+
     // どちらも見つからない場合は新しいキーペアを生成
     logger.warn('⚠️  既存のキーペアが見つかりません。新しいキーペアを生成します。');
     const newKeypair = Keypair.generate();
     logger.info(`🔑 新しいキーペア生成: ${newKeypair.publicKey.toBase58()}`);
     return newKeypair;
-    
   } catch (error) {
     logger.error('キーペアの読み込みに失敗しました:', error);
     throw error;
@@ -56,15 +55,9 @@ function loadAdminKeypair(): Keypair {
 
 // PDAの計算
 function calculatePDAs(programId: PublicKey) {
-  const [configPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from('config')],
-    programId
-  );
+  const [configPda] = PublicKey.findProgramAddressSync([Buffer.from('config')], programId);
 
-  const [rewardMintPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from('reward_mint')],
-    programId
-  );
+  const [rewardMintPda] = PublicKey.findProgramAddressSync([Buffer.from('reward_mint')], programId);
 
   const [mintAuthorityPda] = PublicKey.findProgramAddressSync(
     [Buffer.from('mint_authority')],
@@ -81,30 +74,30 @@ function calculatePDAs(programId: PublicKey) {
 async function initialize() {
   try {
     logger.info('🚀 初期化開始...');
-    
+
     // 管理者キーペアを読み込む
     const adminKeypair = loadAdminKeypair();
     logger.info(`👤 管理者アドレス: ${adminKeypair.publicKey.toBase58()}`);
-    
+
     // 接続とプロバイダーの設定
     const connection = new Connection(RPC_URL, 'confirmed');
     const wallet = new anchor.Wallet(adminKeypair);
     const provider = new anchor.AnchorProvider(connection, wallet, {
       preflightCommitment: 'confirmed',
     });
-    
+
     // IDLを読み込んでプログラムを初期化
     const idl = loadIDL();
     const program = new Program(idl, PROGRAM_ID, provider);
-    
+
     // PDAの計算
     const pdas = calculatePDAs(PROGRAM_ID);
-    
+
     logger.info('📍 PDAアドレス:');
     logger.info(`  - Config: ${pdas.config.toBase58()}`);
     logger.info(`  - Reward Mint: ${pdas.rewardMint.toBase58()}`);
     logger.info(`  - Mint Authority: ${pdas.mintAuthority.toBase58()}`);
-    
+
     // 1. Config が既に初期化されているか確認
     let configExists = false;
     try {
@@ -118,32 +111,36 @@ async function initialize() {
     } catch (e) {
       logger.info('✅ Config は未初期化です。初期化を実行します。');
     }
-    
+
     // 2. Config の初期化（必要な場合）
     if (!configExists) {
       logger.info('📝 Config を初期化中...');
-      
+
       const baseRate = new BN(10);
       const halvingInterval = new BN(86400 * 365); // 1年（秒単位）
-      
+
       const tx1 = await program.methods
-        .initializeConfig(baseRate, halvingInterval)
+        .initializeConfig(baseRate, halvingInterval, wallet.publicKey)
         .accounts({
           config: pdas.config,
           admin: wallet.publicKey,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
-      
+
       logger.success(`✅ Config 初期化成功! TX: ${tx1}`);
-      
+
       // 確認
       const configAccount = await program.account.config.fetch(pdas.config);
       logger.info(`  - Base Rate: ${configAccount.baseRate.toString()}`);
       logger.info(`  - Halving Interval: ${configAccount.halvingInterval.toString()}秒`);
-      logger.info(`  - Next Halving Time: ${new Date(configAccount.nextHalvingTime.toNumber() * 1000).toLocaleString()}`);
+      logger.info(
+        `  - Next Halving Time: ${new Date(
+          configAccount.nextHalvingTime.toNumber() * 1000
+        ).toLocaleString()}`
+      );
     }
-    
+
     // 3. Reward Mint が既に存在するか確認
     let mintExists = false;
     try {
@@ -155,21 +152,17 @@ async function initialize() {
     } catch (e) {
       logger.info('✅ Reward Mint は未作成です。作成を実行します。');
     }
-    
+
     // 4. Reward Mint の作成（必要な場合）
     if (!mintExists) {
       logger.info('🪙 Reward Mint を作成中...');
-      
+
       // Derive metadata account PDA
       const [metadataAccount] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from('metadata'),
-          TOKEN_METADATA_ID.toBuffer(),
-          pdas.rewardMint.toBuffer()
-        ],
+        [Buffer.from('metadata'), TOKEN_METADATA_ID.toBuffer(), pdas.rewardMint.toBuffer()],
         TOKEN_METADATA_ID
       );
-      
+
       const tx2 = await program.methods
         .createRewardMint()
         .accounts({
@@ -183,17 +176,17 @@ async function initialize() {
           tokenMetadataProgram: TOKEN_METADATA_ID,
         })
         .rpc();
-      
+
       logger.success(`✅ Reward Mint ($WEED) 作成成功! TX: ${tx2}`);
       logger.info(`  - Mint Address: ${pdas.rewardMint.toBase58()}`);
       logger.info(`  - Token Name: Weed Token`);
       logger.info(`  - Token Symbol: WEED`);
     }
-    
+
     // 5. 残高確認
     const balance = await connection.getBalance(wallet.publicKey);
     logger.info(`💰 管理者の残高: ${balance / 1e9} SOL`);
-    
+
     logger.success('🎉 初期化が完了しました！');
     logger.info('');
     logger.info('📌 次のステップ:');
@@ -202,9 +195,10 @@ async function initialize() {
     logger.info('  3. ユーザーを初期化');
     logger.info('  4. 施設を購入');
     logger.info('  5. 報酬を請求');
-    
   } catch (error) {
-    logger.error(`❌ エラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
+    logger.error(
+      `❌ エラーが発生しました: ${error instanceof Error ? error.message : String(error)}`
+    );
     if (error instanceof Error && error.stack) {
       logger.error(error.stack);
     }

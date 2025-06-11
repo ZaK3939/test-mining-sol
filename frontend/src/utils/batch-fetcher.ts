@@ -34,7 +34,7 @@ export class BatchFetcher {
 
     try {
       const results: BatchResult[] = [];
-      
+
       // Split requests into batches
       for (let i = 0; i < requests.length; i += this.MAX_BATCH_SIZE) {
         const batch = requests.slice(i, i + this.MAX_BATCH_SIZE);
@@ -45,7 +45,9 @@ export class BatchFetcher {
       logger.info(`✅ バッチフェッチ完了: ${requests.length}件のアカウント`);
       return results;
     } catch (error) {
-      logger.error(`❌ バッチフェッチエラー: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `❌ バッチフェッチエラー: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
@@ -54,19 +56,23 @@ export class BatchFetcher {
    * Process a single batch of requests
    */
   private async processBatch(batch: BatchRequest[]): Promise<BatchResult[]> {
-    const addresses = batch.map(req => req.address);
-    
+    const addresses = batch.map((req) => req.address);
+
     try {
       const accounts = await this.connection.getMultipleAccountsInfo(addresses);
-      
+
       return batch.map((request, index) => ({
         address: request.address,
         name: request.name,
         account: accounts[index],
       }));
     } catch (error) {
-      logger.warn(`⚠️ バッチ処理エラー、個別取得にフォールバック: ${error instanceof Error ? error.message : String(error)}`);
-      
+      logger.warn(
+        `⚠️ バッチ処理エラー、個別取得にフォールバック: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+
       // Fallback to individual requests if batch fails
       return await this.fallbackToIndividualRequests(batch);
     }
@@ -77,7 +83,7 @@ export class BatchFetcher {
    */
   private async fallbackToIndividualRequests(batch: BatchRequest[]): Promise<BatchResult[]> {
     const results: BatchResult[] = [];
-    
+
     for (const request of batch) {
       try {
         const account = await this.connection.getAccountInfo(request.address);
@@ -87,7 +93,11 @@ export class BatchFetcher {
           account,
         });
       } catch (error) {
-        logger.warn(`⚠️ 個別アカウント取得失敗 ${request.name}: ${error instanceof Error ? error.message : String(error)}`);
+        logger.warn(
+          `⚠️ 個別アカウント取得失敗 ${request.name}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
         results.push({
           address: request.address,
           name: request.name,
@@ -95,19 +105,22 @@ export class BatchFetcher {
         });
       }
     }
-    
+
     return results;
   }
 
   /**
    * Utility method to create batch requests for common use cases
    */
-  static createGameStateBatch(_userPublicKey: PublicKey, pdas: {
-    userState: PublicKey;
-    facility: PublicKey;
-    config: PublicKey;
-    rewardMint: PublicKey;
-  }): BatchRequest[] {
+  static createGameStateBatch(
+    _userPublicKey: PublicKey,
+    pdas: {
+      userState: PublicKey;
+      facility: PublicKey;
+      config: PublicKey;
+      rewardMint: PublicKey;
+    }
+  ): BatchRequest[] {
     return [
       { address: pdas.userState, name: 'userState' },
       { address: pdas.facility, name: 'facility' },
@@ -119,20 +132,22 @@ export class BatchFetcher {
   /**
    * Utility method to create batch requests for multiple users
    */
-  static createMultiUserBatch(users: Array<{
-    publicKey: PublicKey;
-    userStatePDA: PublicKey;
-    facilityPDA: PublicKey;
-  }>): BatchRequest[] {
+  static createMultiUserBatch(
+    users: Array<{
+      publicKey: PublicKey;
+      userStatePDA: PublicKey;
+      facilityPDA: PublicKey;
+    }>
+  ): BatchRequest[] {
     const requests: BatchRequest[] = [];
-    
+
     users.forEach((user, index) => {
       requests.push(
         { address: user.userStatePDA, name: `userState_${index}` },
         { address: user.facilityPDA, name: `facility_${index}` }
       );
     });
-    
+
     return requests;
   }
 
@@ -145,20 +160,22 @@ export class BatchFetcher {
     retryDelay: number = 1000
   ): Promise<BatchResult[]> {
     let lastError: Error | null = null;
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         return await this.fetchMultipleAccounts(requests);
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        
+
         if (attempt < maxRetries - 1) {
-          logger.warn(`🔄 バッチフェッチリトライ ${attempt + 1}/${maxRetries}: ${lastError.message}`);
-          await new Promise(resolve => setTimeout(resolve, retryDelay * (attempt + 1)));
+          logger.warn(
+            `🔄 バッチフェッチリトライ ${attempt + 1}/${maxRetries}: ${lastError.message}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, retryDelay * (attempt + 1)));
         }
       }
     }
-    
+
     throw lastError || new Error('バッチフェッチが最大リトライ回数に達しました');
   }
 
@@ -173,15 +190,15 @@ export class BatchFetcher {
     averageTimePerRequest: number;
   }> {
     const startTime = performance.now();
-    
+
     try {
       const results = await this.fetchMultipleAccounts(requests);
       const endTime = performance.now();
       const duration = endTime - startTime;
-      
-      const successCount = results.filter(r => r.account !== null).length;
+
+      const successCount = results.filter((r) => r.account !== null).length;
       const failureCount = results.length - successCount;
-      
+
       return {
         duration,
         requestCount: requests.length,
