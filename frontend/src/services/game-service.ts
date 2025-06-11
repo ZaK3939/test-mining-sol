@@ -250,33 +250,63 @@ export class GameService {
     );
   }
 
-  // Seed pack purchase
-  async purchaseSeedPack(quantity: number, callbacks: UICallbacks): Promise<string> {
+  // Seed pack purchase with Pyth Entropy
+  async purchaseSeedPack(quantity: number, callbacks: UICallbacks): Promise<{
+    transactionSignature: string;
+    entropyRequestAccount: PublicKey;
+  }> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(() => this.getAnchorClient().purchaseSeedPack(quantity), {
-          operationName: 'シードパック購入',
-          successMessage: `シードパック${quantity}個の購入が完了しました！`,
-          onSuccess: callbacks.updateGameState,
-          ...callbacks,
-        });
+        callbacks.showLoading('Pyth Entropyを使用してシードパックを購入中...');
+        
+        try {
+          const result = await this.getAnchorClient().purchaseSeedPack(quantity);
+          
+          callbacks.showSuccess(
+            `シードパック${quantity}個の購入が完了しました！Pyth Entropyで乱数生成中...`
+          );
+          
+          await callbacks.updateGameState();
+          
+          return {
+            transactionSignature: result.transactionSignature,
+            entropyRequestAccount: result.entropyRequestAccount,
+          };
+        } catch (error) {
+          callbacks.showError(
+            `シードパック購入エラー: ${error instanceof Error ? error.message : String(error)}`
+          );
+          throw error;
+        } finally {
+          callbacks.hideLoading();
+        }
       },
       callbacks.showError
     );
   }
 
-  // Seed pack opening
-  async openSeedPack(packId: number, quantity: number, callbacks: UICallbacks): Promise<string> {
+  // Seed pack opening with Pyth Entropy validation
+  async openSeedPack(
+    packId: number, 
+    quantity: number, 
+    entropyRequestAccount?: PublicKey,
+    callbacks: UICallbacks
+  ): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        return await executeTransaction(() => this.getAnchorClient().openSeedPack(packId, quantity), {
-          operationName: 'シードパック開封',
-          successMessage: 'シードパックの開封が完了しました！',
-          onSuccess: callbacks.updateGameState,
-          ...callbacks,
-        });
+        return await executeTransaction(
+          () => this.getAnchorClient().openSeedPack(packId, quantity, entropyRequestAccount), 
+          {
+            operationName: 'シードパック開封',
+            successMessage: entropyRequestAccount 
+              ? 'Pyth Entropyを使用してシードパックの開封が完了しました！'
+              : 'シードパックの開封が完了しました！',
+            onSuccess: callbacks.updateGameState,
+            ...callbacks,
+          }
+        );
       },
       callbacks.showError
     );
@@ -391,5 +421,81 @@ export class GameService {
     if (walletState.connected && walletState.publicKey) {
       this.getAnchorClient().invalidateUserCache(walletState.publicKey);
     }
+  }
+
+  // 管理者ダッシュボード用のデータ取得メソッド
+
+  // Config情報取得
+  async fetchConfig(): Promise<ConfigAccount | null> {
+    try {
+      return await this.getAnchorClient().getConfig();
+    } catch (error) {
+      logger.error('Config取得エラー:', error);
+      return null;
+    }
+  }
+
+  // 報酬ミント情報取得
+  async fetchRewardMintInfo(): Promise<{ supply: bigint } | null> {
+    try {
+      const connection = this.solanaService.getConnection();
+      const pdas = await this.getAnchorClient().calculatePDAs();
+      const mintInfo = await connection.getTokenSupply(pdas.rewardMint);
+      return {
+        supply: BigInt(mintInfo.value.amount)
+      };
+    } catch (error) {
+      logger.error('報酬ミント情報取得エラー:', error);
+      return null;
+    }
+  }
+
+  // グローバル統計取得
+  async fetchGlobalStats(): Promise<{
+    totalGrowPower: number;
+    totalFarmSpaces: number;
+    totalSupply: number;
+    currentRewardsPerSecond: number;
+    lastUpdateTime: number;
+  } | null> {
+    try {
+      const stats = await this.getAnchorClient().getGlobalStats();
+      if (stats) {
+        return {
+          totalGrowPower: safeBNToNumber(stats.totalGrowPower),
+          totalFarmSpaces: safeBNToNumber(stats.totalFarmSpaces),
+          totalSupply: safeBNToNumber(stats.totalSupply),
+          currentRewardsPerSecond: safeBNToNumber(stats.currentRewardsPerSecond),
+          lastUpdateTime: safeBNToNumber(stats.lastUpdateTime),
+        };
+      }
+      return null;
+    } catch (error) {
+      logger.error('グローバル統計取得エラー:', error);
+      return null;
+    }
+  }
+
+  // 手数料プール情報取得
+  async fetchFeePool(): Promise<{
+    accumulatedFees: number;
+  } | null> {
+    try {
+      const feePool = await this.getAnchorClient().getFeePool();
+      if (feePool) {
+        return {
+          accumulatedFees: safeBNToNumber(feePool.accumulatedFees),
+        };
+      }
+      return null;
+    } catch (error) {
+      logger.error('手数料プール取得エラー:', error);
+      return null;
+    }
+  }
+
+  // プログラムID取得
+  getProgramId(): PublicKey {
+    return this.getAnchorClient().getProgramId();
   }
 }

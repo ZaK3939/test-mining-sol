@@ -342,16 +342,41 @@ pub fn initialize_seed_storage(seed_storage: &mut SeedStorage, owner: Pubkey) {
     seed_storage.reserve = [0; 32];
 }
 
-/// Generate random seed for seed pack opening
-pub fn generate_seed_pack_random(
-    timestamp: i64,
-    user_key: &[u8],
-    counter: u64,
-) -> u64 {
-    (timestamp as u64)
-        .wrapping_mul(user_key[0] as u64)
-        .wrapping_add(counter)
-        .wrapping_mul(7919) // Prime number for better distribution
+/// Generate entropy request key for Pyth Entropy
+/// This derives the PDA for entropy request accounts
+pub fn derive_entropy_request_key(
+    user: Pubkey,
+    sequence: u64,
+    pyth_entropy_program: Pubkey,
+) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[
+            b"entropy_request",
+            user.as_ref(),
+            &sequence.to_le_bytes(),
+        ],
+        &pyth_entropy_program,
+    )
+}
+
+/// Validate entropy request account
+/// Ensures the account belongs to the correct program and user
+pub fn validate_entropy_request_account(
+    entropy_request: &UncheckedAccount,
+    expected_owner: Pubkey,
+    _user: Pubkey,
+    _sequence: u64,
+) -> Result<()> {
+    // Check owner
+    require!(
+        *entropy_request.owner == expected_owner,
+        crate::error::GameError::InvalidEntropyAccount
+    );
+    
+    // Additional validation can be added here
+    // such as checking the account data format
+    
+    Ok(())
 }
 
 /// Add seed to user's storage

@@ -94,4 +94,19 @@ pub enum GameError {
     
     #[msg("Seed storage is full")]
     StorageFull,
+    
+    #[msg("Entropy sequence mismatch")]
+    EntropySequenceMismatch,
+    
+    #[msg("Entropy result not ready yet")]
+    EntropyNotReady,
+    
+    #[msg("Invalid entropy result account")]
+    InvalidEntropyAccount,
+    
+    #[msg("Invalid user entropy seed")]
+    InvalidUserEntropySeed,
+    
+    #[msg("Total supply cap exceeded - cannot mint more tokens")]
+    SupplyCapExceeded,
 }

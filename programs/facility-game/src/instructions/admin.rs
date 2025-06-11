@@ -89,6 +89,9 @@ pub fn initialize_config(
     config.seed_counter = 0;
     config.seed_pack_counter = 0;
     
+    // Initialize supply tracking
+    config.total_supply_minted = 0;
+    
     // Zero out reserved space
     config.reserve = [0; 2];
     

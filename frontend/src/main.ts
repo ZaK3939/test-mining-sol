@@ -127,6 +127,23 @@ class FarmGameApp {
     document.getElementById('clear-logs')?.addEventListener('click', () => {
       logger.clear();
     });
+
+    // 管理者ダッシュボード機能
+    document.getElementById('run-health-check')?.addEventListener('click', () => {
+      this.handleHealthCheck();
+    });
+
+    document.getElementById('auto-health-toggle')?.addEventListener('click', () => {
+      this.handleAutoHealthToggle();
+    });
+
+    document.getElementById('refresh-global-stats')?.addEventListener('click', () => {
+      this.handleRefreshGlobalStats();
+    });
+
+    document.getElementById('check-init-flow')?.addEventListener('click', () => {
+      this.handleCheckInitFlow();
+    });
   }
 
   private async handleWalletConnect() {
@@ -502,6 +519,304 @@ class FarmGameApp {
       statusEl.innerHTML = `<div class="error">${displayMessage}</div>`;
       setTimeout(() => this.hideLoading(), UI_CONSTANTS.ERROR_MESSAGE_DURATION);
     }
+  }
+
+  // 管理者ダッシュボード機能
+  private autoHealthCheckInterval: number | null = null;
+
+  private async handleHealthCheck() {
+    try {
+      this.showLoading('🏥 システムヘルスチェック実行中...');
+      
+      const results = {
+        config: await this.checkConfigStatus(),
+        mint: await this.checkMintStatus(),
+        globalStats: await this.checkGlobalStatsStatus(),
+        feePool: await this.checkFeePoolStatus(),
+        programConnection: await this.checkProgramConnection(),
+      };
+
+      this.updateHealthDisplay(results);
+      this.updateLastCheckTime();
+      
+      // アラート表示
+      this.showHealthAlert(results);
+      
+      this.hideLoading();
+      logger.success('✅ ヘルスチェック完了');
+    } catch (error) {
+      this.hideLoading();
+      this.showError(`ヘルスチェックエラー: ${error}`);
+      logger.error('ヘルスチェックエラー:', error);
+    }
+  }
+
+  private async checkConfigStatus(): Promise<{ status: string; details: string; isHealthy: boolean }> {
+    try {
+      const config = await this.gameService.fetchConfig();
+      if (config) {
+        return {
+          status: '✅ 初期化済み',
+          details: `管理者: ${config.admin.toBase58().slice(0, 8)}...`,
+          isHealthy: true
+        };
+      } else {
+        return {
+          status: '❌ 未初期化',
+          details: 'Config account not found',
+          isHealthy: false
+        };
+      }
+    } catch (error) {
+      return {
+        status: '⚠️ エラー',
+        details: `Error: ${error}`,
+        isHealthy: false
+      };
+    }
+  }
+
+  private async checkMintStatus(): Promise<{ status: string; details: string; isHealthy: boolean }> {
+    try {
+      const mintInfo = await this.gameService.fetchRewardMintInfo();
+      if (mintInfo) {
+        return {
+          status: '✅ 作成済み',
+          details: `供給量: ${mintInfo.supply.toString()}`,
+          isHealthy: true
+        };
+      } else {
+        return {
+          status: '❌ 未作成',
+          details: 'Reward mint not found',
+          isHealthy: false
+        };
+      }
+    } catch (error) {
+      return {
+        status: '⚠️ エラー',
+        details: `Error: ${error}`,
+        isHealthy: false
+      };
+    }
+  }
+
+  private async checkGlobalStatsStatus(): Promise<{ status: string; details: string; isHealthy: boolean }> {
+    try {
+      const stats = await this.gameService.fetchGlobalStats();
+      if (stats) {
+        return {
+          status: '✅ 動作中',
+          details: `総Grow Power: ${stats.totalGrowPower}`,
+          isHealthy: true
+        };
+      } else {
+        return {
+          status: '❌ 未初期化',
+          details: 'Global stats not found',
+          isHealthy: false
+        };
+      }
+    } catch (error) {
+      return {
+        status: '⚠️ エラー',
+        details: `Error: ${error}`,
+        isHealthy: false
+      };
+    }
+  }
+
+  private async checkFeePoolStatus(): Promise<{ status: string; details: string; isHealthy: boolean }> {
+    try {
+      const feePool = await this.gameService.fetchFeePool();
+      if (feePool) {
+        return {
+          status: '✅ 動作中',
+          details: `残高: ${feePool.accumulatedFees} WEED`,
+          isHealthy: true
+        };
+      } else {
+        return {
+          status: '❌ 未初期化',
+          details: 'Fee pool not found',
+          isHealthy: false
+        };
+      }
+    } catch (error) {
+      return {
+        status: '⚠️ エラー',
+        details: `Error: ${error}`,
+        isHealthy: false
+      };
+    }
+  }
+
+  private async checkProgramConnection(): Promise<{ status: string; details: string; isHealthy: boolean }> {
+    try {
+      const programAccount = await this.solanaService.getConnection().getAccountInfo(
+        this.gameService.getProgramId()
+      );
+      if (programAccount) {
+        return {
+          status: '✅ 接続OK',
+          details: 'プログラムアカウント確認済み',
+          isHealthy: true
+        };
+      } else {
+        return {
+          status: '❌ 接続エラー',
+          details: 'Program account not found',
+          isHealthy: false
+        };
+      }
+    } catch (error) {
+      return {
+        status: '⚠️ エラー',
+        details: `Error: ${error}`,
+        isHealthy: false
+      };
+    }
+  }
+
+  private updateHealthDisplay(results: Record<string, { status: string; details: string; isHealthy: boolean }>) {
+    document.getElementById('health-config-status')!.textContent = results.config.status;
+    document.getElementById('health-mint-status')!.textContent = results.mint.status;
+    document.getElementById('health-global-stats')!.textContent = results.globalStats.status;
+    document.getElementById('health-fee-pool')!.textContent = results.feePool.status;
+    document.getElementById('health-program-connection')!.textContent = results.programConnection.status;
+  }
+
+  private updateLastCheckTime() {
+    const now = new Date().toLocaleTimeString('ja-JP');
+    document.getElementById('health-last-check')!.textContent = now;
+  }
+
+  private showHealthAlert(results: Record<string, { status: string; details: string; isHealthy: boolean }>) {
+    const alertEl = document.getElementById('health-alert')!;
+    const healthyCount = Object.values(results).filter(r => r.isHealthy).length;
+    const totalCount = Object.values(results).length;
+    
+    if (healthyCount === totalCount) {
+      alertEl.className = 'health-alert success';
+      alertEl.innerHTML = '✅ <strong>システムは正常に動作しています</strong><br>すべての機能が利用可能です。';
+    } else if (healthyCount > totalCount / 2) {
+      alertEl.className = 'health-alert warning';
+      alertEl.innerHTML = `⚠️ <strong>一部の機能に問題があります</strong><br>${healthyCount}/${totalCount} の機能が正常です。`;
+    } else {
+      alertEl.className = 'health-alert error';
+      alertEl.innerHTML = `❌ <strong>システムに重大な問題があります</strong><br>${healthyCount}/${totalCount} の機能のみ正常です。`;
+    }
+    
+    alertEl.style.display = 'block';
+  }
+
+  private handleAutoHealthToggle() {
+    const button = document.getElementById('auto-health-toggle') as HTMLButtonElement;
+    
+    if (this.autoHealthCheckInterval) {
+      // 自動チェックを停止
+      clearInterval(this.autoHealthCheckInterval);
+      this.autoHealthCheckInterval = null;
+      button.textContent = '🔄 自動チェック: OFF';
+      button.classList.remove('auto-refresh-active');
+    } else {
+      // 自動チェックを開始（30秒間隔）
+      this.autoHealthCheckInterval = window.setInterval(() => {
+        this.handleHealthCheck();
+      }, 30000);
+      button.textContent = '🔄 自動チェック: ON (30s)';
+      button.classList.add('auto-refresh-active');
+      
+      // 即座に最初のチェックを実行
+      this.handleHealthCheck();
+    }
+  }
+
+  private async handleRefreshGlobalStats() {
+    try {
+      this.showLoading('📊 グローバル統計取得中...');
+      
+      const stats = await this.gameService.fetchGlobalStats();
+      const config = await this.gameService.fetchConfig();
+      const feePool = await this.gameService.fetchFeePool();
+      
+      if (stats) {
+        document.getElementById('global-total-grow-power')!.textContent = stats.totalGrowPower.toString();
+        document.getElementById('global-total-farms')!.textContent = stats.totalFarmSpaces.toString();
+        document.getElementById('global-total-supply')!.textContent = `${(stats.totalSupply / 1_000_000).toFixed(6)} WEED`;
+        document.getElementById('global-reward-rate')!.textContent = `${stats.currentRewardsPerSecond} WEED/秒`;
+        
+        const lastUpdate = new Date(stats.lastUpdateTime * 1000).toLocaleString('ja-JP');
+        document.getElementById('global-last-update')!.textContent = lastUpdate;
+      }
+      
+      if (feePool) {
+        document.getElementById('global-fee-pool-balance')!.textContent = `${(feePool.accumulatedFees / 1_000_000).toFixed(6)} WEED`;
+      }
+      
+      this.hideLoading();
+      this.showSuccess('📊 グローバル統計を更新しました');
+    } catch (error) {
+      this.hideLoading();
+      this.showError(`統計取得エラー: ${error}`);
+      logger.error('グローバル統計取得エラー:', error);
+    }
+  }
+
+  private async handleCheckInitFlow() {
+    try {
+      this.showLoading('🔄 初期化フロー確認中...');
+      
+      // 各初期化ステップをチェック
+      const steps = [
+        { id: 'config', check: () => this.gameService.fetchConfig() },
+        { id: 'mint', check: () => this.gameService.fetchRewardMintInfo() },
+        { id: 'global-stats', check: () => this.gameService.fetchGlobalStats() },
+        { id: 'fee-pool', check: () => this.gameService.fetchFeePool() },
+      ];
+      
+      for (const step of steps) {
+        try {
+          const result = await step.check();
+          this.updateInitStepStatus(step.id, result ? 'completed' : 'error', 
+            result ? '✅ 完了' : '❌ 未完了');
+        } catch (error) {
+          this.updateInitStepStatus(step.id, 'error', `❌ エラー: ${error}`);
+        }
+      }
+      
+      this.hideLoading();
+      this.showSuccess('🔄 初期化フロー確認完了');
+    } catch (error) {
+      this.hideLoading();
+      this.showError(`初期化フロー確認エラー: ${error}`);
+      logger.error('初期化フロー確認エラー:', error);
+    }
+  }
+
+  private updateInitStepStatus(stepId: string, status: 'completed' | 'error' | 'pending', details: string) {
+    const stepEl = document.getElementById(`step-${stepId}`)!;
+    const indicatorEl = document.getElementById(`indicator-${stepId}`)!;
+    const detailsEl = document.getElementById(`details-${stepId}`)!;
+    
+    // クラスをリセット
+    stepEl.classList.remove('completed', 'error');
+    
+    switch (status) {
+      case 'completed':
+        stepEl.classList.add('completed');
+        indicatorEl.textContent = '✅';
+        break;
+      case 'error':
+        stepEl.classList.add('error');
+        indicatorEl.textContent = '❌';
+        break;
+      case 'pending':
+        indicatorEl.textContent = '⏳';
+        break;
+    }
+    
+    detailsEl.textContent = details;
   }
 }
 

@@ -7,6 +7,7 @@ import { Buffer } from 'buffer';
 export interface PDAs {
   userState: PublicKey;
   farmSpace: PublicKey;
+  facility: PublicKey; // Alias for farmSpace for backward compatibility
   config: PublicKey;
   rewardMint: PublicKey;
   mintAuthority: PublicKey;
@@ -52,6 +53,7 @@ export class PDAHelper {
     return {
       userState,
       farmSpace,
+      facility: farmSpace, // Alias for backward compatibility
       config,
       rewardMint,
       mintAuthority,

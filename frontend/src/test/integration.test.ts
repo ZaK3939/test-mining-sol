@@ -93,7 +93,7 @@ describe('Integration Tests - Deployed Program', () => {
       const facility = await anchorClient.fetchFacility(testKeypair.publicKey);
       expect(facility).toBeTruthy();
       expect(facility!.owner.toString()).toBe(testKeypair.publicKey.toString());
-      expect(facility!.machineCount).toBeGreaterThan(0);
+      expect(facility!.facilitySize).toBeGreaterThan(0);
 
       // Verify user state updated
       const userState = await anchorClient.fetchUserState(testKeypair.publicKey);

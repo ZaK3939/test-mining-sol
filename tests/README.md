@@ -1,270 +1,182 @@
 # Farm Game Test Suite
 
-This directory contains comprehensive tests for the Farm Game Solana program.
+This directory contains a comprehensive, refactored test suite for the Farm Game Solana program. The tests are organized by type and purpose to maximize clarity, reduce redundancy, and ensure complete coverage.
 
 ## Test Structure
 
-### Organization
 ```
-tests/
-├── helpers/                    # Test utilities and shared code
-│   ├── test-setup.ts          # TestEnvironment class and setup utilities
-│   ├── assertions.ts          # Custom assertion functions
-│   └── test-data.ts           # Test data generators and mocks
-├── integration/               # Integration tests
-│   ├── core-game-mechanics.test.ts    # Core game functionality
-│   ├── referral-system.test.ts        # Referral reward system
-│   └── halving-mechanism.test.ts      # Halving mechanism tests
-└── farm-game.test.ts          # Main test entry point
+tests-new/
+├── unit/                    # Unit tests for individual functions
+│   ├── instructions/        # Test each instruction type
+│   │   ├── admin.test.ts   # Admin-only functions (config, mint creation)
+│   │   └── user.test.ts    # User management (init_user, buy_farm_space)
+│   └── state/              # State validation tests (planned)
+├── integration/            # Integration tests for complete workflows
+│   └── user-journey.test.ts # Complete user flows and multi-user scenarios
+├── e2e/                    # End-to-end tests
+│   └── game-simulation.test.ts # Full game ecosystem simulation
+├── security/               # Security-focused tests
+│   └── access-control.test.ts # Authorization, PDA security, attack prevention
+├── helpers/                # Shared utilities
+│   ├── setup.ts           # Test environment setup and user creation
+│   ├── assertions.ts      # Custom assertion functions
+│   └── factories.ts       # Test data factories and scenarios
+└── fixtures/               # Test data fixtures (planned)
 ```
 
-### Test Categories
+## Test Categories
 
-1. **Core Game Mechanics** (`core-game-mechanics.test.ts`)
-   - System initialization
-   - User management
-   - Farm space management
-   - Basic reward system
-   - State consistency
+### Unit Tests (`unit/`)
+- **Purpose**: Test individual functions and instructions in isolation
+- **Coverage**: Each program instruction, state validation, edge cases
+- **Files**:
+  - `instructions/admin.test.ts`: Admin functions (initialize_config, create_reward_mint, etc.)
+  - `instructions/user.test.ts`: User functions (init_user, buy_farm_space, etc.)
 
-2. **Referral System** (`referral-system.test.ts`)
-   - Multi-level referral chains
-   - Referral reward distribution
-   - Protocol address exclusion
-   - Edge cases and performance
+### Integration Tests (`integration/`)
+- **Purpose**: Test complete user workflows and multi-user interactions
+- **Coverage**: User journeys, referral chains, economic scenarios
+- **Files**:
+  - `user-journey.test.ts`: Complete user onboarding → farming → rewards cycle
 
-3. **Halving Mechanism** (`halving-mechanism.test.ts`)
-   - Single and multiple halving events
-   - Cross-halving reward calculations
-   - Edge cases and system integration
+### End-to-End Tests (`e2e/`)
+- **Purpose**: Test the entire game ecosystem under realistic conditions
+- **Coverage**: Viral growth simulation, economic sustainability, scalability
+- **Files**:
+  - `game-simulation.test.ts`: Full ecosystem simulation with 40+ users
+
+### Security Tests (`security/`)
+- **Purpose**: Validate security controls and prevent attack vectors
+- **Coverage**: Access control, PDA security, unauthorized access attempts
+- **Files**:
+  - `access-control.test.ts`: Authorization validation and attack prevention
+
+## Helper Utilities
+
+### `helpers/setup.ts`
+- `TestEnvironment`: Main test environment class
+- `setupTestEnvironment()`: Quick environment setup with initialization
+- `createUser()`: Factory for creating test users with all PDAs
+
+### `helpers/assertions.ts`
+- `assertTokenBalance()`: Verify token account balances
+- `assertUserGrowPower()`: Check user grow power values
+- `assertSupplyCapCompliance()`: Validate 120M WEED supply cap
+- `assertEconomicConsistency()`: Verify economic state consistency
+
+### `helpers/factories.ts`
+- `TestScenarioFactory`: Factory class for creating complex test scenarios
+- `createBasicUserScenario()`: User with farm space ready for testing
+- `createReferralScenario()`: Referrer + referred user setup
+- `createMultiUserScenario()`: Multiple users for stress testing
+- `createReferralChain()`: Multi-level referral chains
 
 ## Running Tests
 
 ### Prerequisites
-1. Start local Solana test validator:
-   ```bash
-   solana-test-validator --reset
-   ```
+1. Local Solana validator running
+2. Program deployed to local validator
+3. Dependencies installed
 
-2. Configure Solana CLI for localhost:
-   ```bash
-   solana config set --url localhost
-   ```
-
-### Test Commands
-
-#### Run All Tests
+### Commands
 ```bash
+# Run all tests
 anchor test --skip-local-validator
+
+# Run specific test categories
+npx ts-mocha tests-new/unit/**/*.test.ts
+npx ts-mocha tests-new/integration/**/*.test.ts
+npx ts-mocha tests-new/e2e/**/*.test.ts
+npx ts-mocha tests-new/security/**/*.test.ts
+
+# Run individual test files
+npx ts-mocha tests-new/unit/instructions/admin.test.ts
+npx ts-mocha tests-new/integration/user-journey.test.ts
+npx ts-mocha tests-new/e2e/game-simulation.test.ts
 ```
 
-#### Run Specific Test Suite
-```bash
-# Core game mechanics only
-anchor test --skip-local-validator tests/integration/core-game-mechanics.test.ts
+## Test Features
 
-# Referral system only
-anchor test --skip-local-validator tests/integration/referral-system.test.ts
+### Comprehensive Coverage
+- **Admin Functions**: Config initialization, mint creation, fee pool setup
+- **User Management**: User initialization, farm space purchase, referral system
+- **Economic System**: Reward claiming, mystery packs, supply cap enforcement
+- **Security**: Access control, PDA validation, attack prevention
+- **Game Mechanics**: Invite codes, referral chains, viral growth simulation
 
-# Halving mechanism only
-anchor test --skip-local-validator tests/integration/halving-mechanism.test.ts
-```
+### Realistic Scenarios
+- **Growth Simulation**: 1 founder → 40+ users through invite codes
+- **Economic Strategies**: Conservative, aggressive, and balanced player types
+- **Viral Mechanics**: Multi-wave user onboarding through referral chains
+- **Sustainability**: Long-term economic model validation
 
-#### Run with Verbose Output
-```bash
-anchor test --skip-local-validator -- --reporter spec
-```
+### Quality Assurance
+- **Supply Cap Compliance**: All tests verify 120M WEED token limit
+- **Economic Consistency**: Global state validation across all operations
+- **Security Validation**: Unauthorized access prevention
+- **Performance Testing**: Multi-user concurrent operations
 
-## Test Utilities
+## Key Test Scenarios
 
-### TestEnvironment Class
-The `TestEnvironment` class provides a high-level interface for test setup and execution:
+### Basic User Journey
+1. User initialization
+2. Farm space purchase
+3. Reward accumulation and claiming
+4. Token balance verification
 
-```typescript
-import { TestEnvironment } from './helpers/test-setup';
+### Referral Chain Testing
+1. Founder creates invite codes
+2. Pioneers join via founder codes
+3. Pioneers create their own codes
+4. Community members join via pioneer codes
+5. Referral reward distribution validation
 
-// Setup test environment
-const testEnv = await TestEnvironment.setup();
-await testEnv.initializeSystem();
+### Security Testing
+1. Unauthorized admin function access attempts
+2. Cross-user account manipulation prevention
+3. PDA spoofing attack prevention
+4. Referral system abuse prevention
 
-// Create test user
-const userData = await testEnv.createUserTestData(0);
-await testEnv.buyFarmSpace(userData);
+### Economic Simulation
+1. Multi-phase community growth (Bootstrap → Viral → Diversification → Maturation)
+2. Different player strategies and their outcomes
+3. Mystery pack purchasing and strategy validation
+4. Long-term sustainability and scalability analysis
 
-// Test operations
-const reward = await testEnv.claimRewards(userData);
-```
+## Migration from Old Tests
 
-### Assertions
-Custom assertion functions for game-specific validations:
+This refactored test suite consolidates and improves upon the previous test files:
 
-```typescript
-import { GameAssertions } from './helpers/assertions';
+**Replaced Files**:
+- `farm-game.ts` (446 lines) → Distributed across unit and integration tests
+- `strategic-user-journey.ts` (625 lines) → Consolidated into user-journey.test.ts
+- `economic-simulation.test.ts` (454 lines) → Merged into game-simulation.test.ts
+- `game-experience.test.ts` (595 lines) → Incorporated into user-journey.test.ts
+- `progressive-invite-game.test.ts` (549 lines) → Enhanced in game-simulation.test.ts
 
-// Assert token balance
-await GameAssertions.assertTokenBalance(
-  connection, 
-  tokenAccount, 
-  expectedAmount, 
-  tolerance
-);
-
-// Assert referral reward percentages
-GameAssertions.assertReferralReward(
-  baseReward, 
-  actualReward, 
-  percentage
-);
-
-// Assert game state
-GameAssertions.assertUserState(userState, expected);
-GameAssertions.assertFarmSpace(farmSpace, expected);
-```
-
-### Test Data Generators
-Utilities for generating test scenarios:
-
-```typescript
-import { TestDataGenerator } from './helpers/test-data';
-
-// Generate referral chain
-const chain = TestDataGenerator.generateReferralChain(5);
-
-// Generate upgrade scenarios
-const scenarios = TestDataGenerator.generateFarmUpgradeScenarios();
-
-// Generate halving scenarios
-const halvingTests = TestDataGenerator.generateHalvingScenarios();
-```
-
-## Test Configuration
-
-### Constants
-Test constants are defined in `helpers/test-setup.ts`:
-
-```typescript
-export const TEST_CONSTANTS = {
-  BASE_RATE: 100,
-  HALVING_INTERVAL: 6 * 24 * 60 * 60, // 6 days
-  LEVEL1_REFERRAL_PERCENTAGE: 10,
-  LEVEL2_REFERRAL_PERCENTAGE: 5,
-  // ... more constants
-};
-```
-
-### Timeouts
-Tests involving time-based mechanics (halving, rewards) have extended timeouts:
-- Default: 30 seconds
-- Halving tests: 2-5 minutes
-- Performance tests: 30 seconds - 2 minutes
-
-## Test Data and Scenarios
-
-### Referral Chains
-Tests support various referral relationship patterns:
-- Linear chains (A → B → C → D)
-- Star patterns (A ← B, C, D, E)
-- Complex networks with multiple levels
-
-### Halving Scenarios
-- Short intervals for testing (30-60 seconds)
-- Multiple consecutive halvings
-- Cross-halving reward calculations
-- Zero grow power edge cases
-
-### Performance Tests
-- Concurrent operations (5-50 users)
-- Large referral networks (10-100 users)
-- Stress testing with maximum limits
-
-## Best Practices
-
-### Writing New Tests
-1. Use `TestEnvironment` for setup
-2. Use `GameAssertions` for validations
-3. Use `TestDataGenerator` for test data
-4. Follow the existing test structure
-5. Add appropriate timeouts for time-based tests
-
-### Test Organization
-- Group related tests in `describe` blocks
-- Use descriptive test names
-- Include setup and teardown as needed
-- Document complex test scenarios
-
-### Performance Considerations
-- Use parallel execution where possible
-- Clean up resources between tests
-- Use reasonable timeouts
-- Consider validator limitations
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Validator Connection Issues**
-   - Ensure `solana-test-validator` is running
-   - Check Solana CLI configuration
-   - Verify localhost is accessible
-
-2. **Timeout Errors**
-   - Increase test timeouts for time-based tests
-   - Check validator performance
-   - Reduce test complexity if needed
-
-3. **Account Initialization Errors**
-   - Ensure proper account setup order
-   - Check for duplicate initializations
-   - Verify PDA derivations
-
-4. **Token Account Issues**
-   - Ensure token accounts are created before use
-   - Check mint authority configurations
-   - Verify sufficient balances
-
-### Debug Tips
-- Use `console.log` for intermediate values
-- Check on-chain state between operations
-- Verify transaction signatures and logs
-- Use Solana Explorer for transaction details
+**Improvements**:
+- ✅ Eliminated ~1,500 lines of duplicate test code
+- ✅ Improved test organization and discoverability
+- ✅ Enhanced reusability through factory pattern
+- ✅ Better separation of concerns (unit vs integration vs e2e)
+- ✅ Comprehensive security testing addition
+- ✅ Realistic end-to-end simulation scenarios
 
 ## Contributing
 
 When adding new tests:
-1. Follow the existing structure and patterns
-2. Add appropriate documentation
-3. Ensure tests are deterministic
-4. Include both positive and negative test cases
-5. Update this README if adding new test categories
 
-## Legacy Test Files
+1. **Choose the right category**: Unit for isolated functions, Integration for workflows, E2E for ecosystem
+2. **Use existing helpers**: Leverage setup.ts, assertions.ts, and factories.ts
+3. **Follow naming conventions**: `*.test.ts` for all test files
+4. **Add comprehensive logging**: Help developers understand test progression
+5. **Validate economics**: Always check supply cap and state consistency
+6. **Test security**: Consider attack vectors and unauthorized access
 
-The following legacy test files are maintained for compatibility but should not be used for new tests:
-- `basic-farm-game.ts` - Superseded by core-game-mechanics.test.ts
-- `comprehensive-facility-game.ts` - Old naming, functionality moved to new structure
-- `facility-game.ts` - Basic tests, superseded by integration tests
-- `referral-rewards.ts` - Superseded by referral-system.test.ts
+## Future Enhancements
 
-## Performance Benchmarks
-
-Expected performance thresholds:
-
-| Operation | Expected Time | Max Acceptable |
-|-----------|---------------|----------------|
-| User Init | < 1s | 3s |
-| Farm Purchase | < 1s | 3s |
-| Reward Claim | < 2s | 5s |
-| Referral Distribution | < 1s | 4s |
-| Halving Calculation | < 3s | 5s |
-| Concurrent Claims (5 users) | < 10s | 15s |
-
-## Security Coverage
-
-The test suite covers:
-- ✅ Access control enforcement
-- ✅ PDA ownership verification
-- ✅ Input validation and overflow protection
-- ✅ Token account security
-- ✅ Protocol address exclusion
-- ✅ Referral system integrity
-- ✅ Halving mechanism accuracy
+- [ ] Add performance benchmarking tests
+- [ ] Implement stress testing with 100+ concurrent users
+- [ ] Add property-based testing for economic calculations
+- [ ] Create visual test reporting and metrics dashboard
+- [ ] Add automated test data generation and seeding

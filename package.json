@@ -3,14 +3,11 @@
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "test": "anchor test",
-    "test:basic": "mocha -t 1000000 tests/facility-game.ts --require ts-node/register",
-    "test:comprehensive": "mocha -t 1000000 tests/comprehensive-tests.ts --require ts-node/register",
-    "test:security": "mocha -t 1000000 tests/security-tests.ts --require ts-node/register",
-    "test:performance": "mocha -t 1000000 tests/performance-tests.ts --require ts-node/register",
-    "test:halving": "mocha -t 1000000 tests/halving-tests.ts --require ts-node/register",
-    "test:unit": "yarn test:basic && yarn test:comprehensive",
-    "test:advanced": "yarn test:security && yarn test:performance",
-    "test:all": "yarn test:unit && yarn test:advanced"
+    "test:unit": "mocha -t 1000000 tests/unit/**/*.test.ts --require ts-node/register",
+    "test:integration": "mocha -t 1000000 tests/integration/**/*.test.ts --require ts-node/register",
+    "test:security": "mocha -t 1000000 tests/security/**/*.test.ts --require ts-node/register",
+    "test:e2e": "mocha -t 1000000 tests/e2e/**/*.test.ts --require ts-node/register",
+    "test:all": "yarn test:unit && yarn test:integration && yarn test:security && yarn test:e2e"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

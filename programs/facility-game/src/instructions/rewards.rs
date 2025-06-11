@@ -97,6 +97,7 @@ pub struct DistributeReferralOnClaim<'info> {
     pub mint_authority: UncheckedAccount<'info>,
     
     #[account(
+        mut,
         seeds = [b"config"],
         bump
     )]
@@ -189,6 +190,13 @@ pub struct ClaimReferralRewards<'info> {
     )]
     pub referrer_token_account: Account<'info, TokenAccount>,
     
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+    
     #[account(mut)]
     pub referrer: Signer<'info>,
     
@@ -211,7 +219,7 @@ pub fn claim_reward(mut ctx: Context<ClaimReward>) -> Result<()> {
     require!(user_reward > 0, GameError::NoRewardToClaim);
     
     // Execute reward distribution
-    execute_reward_distribution(&ctx, user_reward)?;
+    execute_reward_distribution(&mut ctx, user_reward)?;
     
     // Update state timestamps
     finalize_claim_state(&mut ctx.accounts, current_time);
@@ -269,7 +277,13 @@ fn calculate_user_rewards(accounts: &ClaimReward, current_time: i64) -> Result<u
 }
 
 /// Execute reward distribution to user and handle referrals
-fn execute_reward_distribution(ctx: &Context<ClaimReward>, user_reward: u64) -> Result<()> {
+fn execute_reward_distribution(ctx: &mut Context<ClaimReward>, user_reward: u64) -> Result<()> {
+    // Check supply cap before minting
+    crate::validation::economic_validation::validate_supply_cap(
+        ctx.accounts.config.total_supply_minted,
+        user_reward
+    )?;
+
     // Mint primary reward to user
     mint_tokens_to_user(
         &ctx.accounts.reward_mint,
@@ -279,6 +293,11 @@ fn execute_reward_distribution(ctx: &Context<ClaimReward>, user_reward: u64) -> 
         ctx.bumps.mint_authority,
         user_reward,
     )?;
+
+    // Update total supply minted
+    ctx.accounts.config.total_supply_minted = ctx.accounts.config.total_supply_minted
+        .checked_add(user_reward)
+        .ok_or(GameError::CalculationOverflow)?;
 
     // Process referral rewards if applicable
     process_referral_rewards(ctx, user_reward)?;
@@ -358,6 +377,12 @@ pub fn distribute_referral_on_claim(
     if level1_reward > 0 && 
        ctx.accounts.level1_referrer.key() != ctx.accounts.config.protocol_referral_address {
         
+        // Check supply cap before minting referral reward
+        crate::validation::economic_validation::validate_supply_cap(
+            ctx.accounts.config.total_supply_minted,
+            level1_reward
+        )?;
+        
         mint_tokens_to_user(
             &ctx.accounts.reward_mint,
             &ctx.accounts.level1_token_account,
@@ -366,6 +391,11 @@ pub fn distribute_referral_on_claim(
             ctx.bumps.mint_authority,
             level1_reward,
         )?;
+        
+        // Update total supply minted
+        ctx.accounts.config.total_supply_minted = ctx.accounts.config.total_supply_minted
+            .checked_add(level1_reward)
+            .ok_or(GameError::CalculationOverflow)?;
         
         msg!("💰 Level 1 referral (10%): {} WEED → {}", 
              level1_reward, ctx.accounts.level1_referrer.key());
@@ -418,6 +448,12 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
     
     let reward_amount = referrer_state.pending_referral_rewards;
     
+    // Check supply cap before minting referral rewards
+    crate::validation::economic_validation::validate_supply_cap(
+        ctx.accounts.config.total_supply_minted,
+        reward_amount
+    )?;
+    
     // Mint tokens to referrer using the mint authority PDA
     mint_tokens_to_user(
         &ctx.accounts.reward_mint,
@@ -427,6 +463,11 @@ pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> 
         ctx.bumps.mint_authority,
         reward_amount,
     )?;
+    
+    // Update total supply minted
+    ctx.accounts.config.total_supply_minted = ctx.accounts.config.total_supply_minted
+        .checked_add(reward_amount)
+        .ok_or(GameError::CalculationOverflow)?;
     
     // Reset pending rewards to 0
     referrer_state.pending_referral_rewards = 0;

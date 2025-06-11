@@ -81,5 +81,5 @@ url = "https://mainnet.helius-rpc.com/?api-key=YOUR_MAINNET_API_KEY"
 # ts-mocha: TypeScriptテストランナー
 # -p ./tsconfig.json: TypeScript設定ファイルを指定
 # -t 1000000: タイムアウト時間をミリ秒で指定（1000秒）
-# tests/**/*.ts: testsディレクトリ内のすべての.tsファイルを実行
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+# tests/**/*.test.ts: リファクタリングされたテストディレクトリを使用
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.test.ts"

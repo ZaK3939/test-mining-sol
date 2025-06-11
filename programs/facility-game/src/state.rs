@@ -28,7 +28,9 @@ pub struct Config {
     pub trading_fee_percentage: u8,
     /// Protocol address that doesn't receive referral rewards
     pub protocol_referral_address: Pubkey,
-    /// Reserved bytes for future upgrades
+    /// Total amount of WEED tokens minted so far
+    pub total_supply_minted: u64,
+    /// Reserved bytes for future upgrades (reduced from 2 to accommodate total_supply_minted)
     pub reserve: [u8; 2],
 }
 
@@ -88,7 +90,8 @@ impl Config {
         1 + // max_invite_limit
         1 + // trading_fee_percentage
         32 + // protocol_referral_address
-        2; // reserve
+        8 + // total_supply_minted
+        2; // reserve (kept for backward compatibility)
         
     /// Default farm space cost (0.5 SOL in lamports)
     pub const DEFAULT_FARM_SPACE_COST: u64 = 500_000_000; // 0.5 SOL
@@ -252,12 +255,16 @@ pub struct SeedPack {
     pub cost_paid: u64,
     /// Whether pack has been opened
     pub is_opened: bool,
-    /// Random seed for opening (set when purchased)
-    pub random_seed: u64,
+    /// Pyth Entropy sequence number (for tracking the random request)
+    pub entropy_sequence: u64,
+    /// User-provided entropy seed (for additional randomness)
+    pub user_entropy_seed: u64,
+    /// Final random value (set after opening)
+    pub final_random_value: u64,
     /// Pack ID
     pub pack_id: u64,
     /// Reserved for future expansion
-    pub reserve: [u8; 32],
+    pub reserve: [u8; 16],
 }
 
 impl Seed {
@@ -278,9 +285,11 @@ impl SeedPack {
         8 + // purchased_at
         8 + // cost_paid
         1 + // is_opened
-        8 + // random_seed
+        8 + // entropy_sequence
+        8 + // user_entropy_seed
+        8 + // final_random_value
         8 + // pack_id
-        32; // reserve
+        16; // reserve
 }
 
 /// Invite code management PDA

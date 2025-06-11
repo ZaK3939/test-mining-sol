@@ -10,12 +10,29 @@ use anchor_lang::prelude::*;
 // anchor buildコマンドで自動生成され、target/deploy/に保存される
 declare_id!("FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B");
 
-// モジュールの宣言
+// 核心モジュールの宣言
 // Rustのモジュールシステムを使って、コードを論理的に分割
 pub mod state;        // アカウントの構造体定義
 pub mod instructions; // 各命令のコンテキスト（必要なアカウント）定義
 pub mod error;        // カスタムエラー定義
 pub mod utils;        // ヘルパー関数
+
+// 新しい機能モジュール（より良い分離のため）
+pub mod constants;    // ゲーム定数
+pub mod validation;   // バリデーション機能
+pub mod economics;    // 経済計算
+
+// テストモジュール（開発時のみ）
+#[cfg(test)]
+pub mod tests;
+
+// 追加の高度なテストモジュール（一時的にコメントアウト）
+// #[cfg(test)]
+// mod test_modules {
+//     pub mod state_advanced_tests;
+//     pub mod error_comprehensive_tests;
+//     pub mod economics_advanced_tests;
+// }
 
 // 他のモジュールから必要な要素をインポート
 use instructions::*;  // すべての命令コンテキストをインポート
@@ -25,6 +42,8 @@ use instructions::*;  // すべての命令コンテキストをインポート
 #[program]
 pub mod farm_game {
     use super::*;
+
+    // ===== ADMIN INSTRUCTIONS =====
 
     /// システム全体の設定を初期化
     /// 管理者のみが実行可能で、ゲーム経済の基本パラメータを設定
@@ -62,6 +81,18 @@ pub mod farm_game {
         instructions::admin::create_reward_mint(ctx)
     }
 
+    /// Initialize global statistics
+    pub fn initialize_global_stats(ctx: Context<InitializeGlobalStats>) -> Result<()> {
+        instructions::admin::initialize_global_stats(ctx)
+    }
+
+    /// Initialize fee pool
+    pub fn initialize_fee_pool(ctx: Context<InitializeFeePool>, treasury_address: Pubkey) -> Result<()> {
+        instructions::admin::initialize_fee_pool(ctx, treasury_address)
+    }
+
+    // ===== USER MANAGEMENT INSTRUCTIONS =====
+
     /// ユーザーアカウントの初期化
     /// ゲームへの参加に必要な基本データ構造を作成
     /// 
@@ -75,6 +106,8 @@ pub mod farm_game {
     pub fn init_user(ctx: Context<InitUser>, referrer: Option<Pubkey>) -> Result<()> {
         instructions::user::init_user(ctx, referrer)
     }
+
+    // ===== FARM MANAGEMENT INSTRUCTIONS =====
 
     /// 農場スペースの購入（レベル1）
     /// 0.5 SOLで初期農場を購入し、種植えを開始可能にする
@@ -91,6 +124,29 @@ pub mod farm_game {
     pub fn buy_farm_space(ctx: Context<BuyFarmSpace>) -> Result<()> {
         instructions::farm::buy_farm_space(ctx)
     }
+
+    /// 農場スペースのアップグレード開始
+    /// $WEEDを消費して24時間後に容量増加
+    /// 
+    /// # アップグレードコスト
+    /// - Lv1→2: 3,500 WEED (容量 4→8)
+    /// - Lv2→3: 18,000 WEED (容量 8→12)
+    /// - Lv3→4: 20,000 WEED (容量 12→16)
+    /// - Lv4→5: 25,000 WEED (容量 16→20)
+    /// 
+    /// # クールダウン機構
+    /// - 24時間の待機時間
+    /// - complete_farm_space_upgradeで完了
+    pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
+        instructions::farm::upgrade_farm_space(ctx)
+    }
+
+    /// Complete farm space upgrade after cooldown
+    pub fn complete_farm_space_upgrade(ctx: Context<CompleteFarmSpaceUpgrade>) -> Result<()> {
+        instructions::farm::complete_farm_space_upgrade(ctx)
+    }
+
+    // ===== REWARD SYSTEM INSTRUCTIONS =====
 
     /// 報酬の請求
     /// ユーザーの貢献度に応じた比例配分で$WEEDトークンを獲得
@@ -133,36 +189,7 @@ pub mod farm_game {
         instructions::rewards::claim_referral_rewards(ctx)
     }
 
-    /// 農場スペースのアップグレード開始
-    /// $WEEDを消費して24時間後に容量増加
-    /// 
-    /// # アップグレードコスト
-    /// - Lv1→2: 3,500 WEED (容量 4→8)
-    /// - Lv2→3: 18,000 WEED (容量 8→12)
-    /// - Lv3→4: 20,000 WEED (容量 12→16)
-    /// - Lv4→5: 25,000 WEED (容量 16→20)
-    /// 
-    /// # クールダウン機構
-    /// - 24時間の待機時間
-    /// - complete_farm_space_upgradeで完了
-    pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
-        instructions::farm::upgrade_farm_space(ctx)
-    }
-
-    /// Complete farm space upgrade after cooldown
-    pub fn complete_farm_space_upgrade(ctx: Context<CompleteFarmSpaceUpgrade>) -> Result<()> {
-        instructions::farm::complete_farm_space_upgrade(ctx)
-    }
-
-    /// Initialize global statistics
-    pub fn initialize_global_stats(ctx: Context<InitializeGlobalStats>) -> Result<()> {
-        instructions::admin::initialize_global_stats(ctx)
-    }
-
-    /// Initialize fee pool
-    pub fn initialize_fee_pool(ctx: Context<InitializeFeePool>, treasury_address: Pubkey) -> Result<()> {
-        instructions::admin::initialize_fee_pool(ctx, treasury_address)
-    }
+    // ===== INVITE SYSTEM INSTRUCTIONS =====
 
     /// 招待コードの作成
     /// 8文字のコードで新規ユーザーを招待し、紹介報酬を獲得
@@ -192,33 +219,37 @@ pub mod farm_game {
         instructions::invite::expand_invite_limit(ctx, additional_invites)
     }
 
-    /// Transfer tokens with 2% fee
-    pub fn transfer_with_fee(ctx: Context<TransferWithFee>, amount: u64) -> Result<()> {
-        instructions::transfer::transfer_with_fee(ctx, amount)
-    }
+    // ===== SEED SYSTEM INSTRUCTIONS =====
 
     /// Initialize seed storage for a user
     pub fn initialize_seed_storage(ctx: Context<InitializeSeedStorage>) -> Result<()> {
         instructions::seeds::initialize_seed_storage_instruction(ctx)
     }
 
-    /// ミステリーシードパックの購入
-    /// 300 $WEEDを燃焼して確率的に高レアリティ種を獲得
+    /// ミステリーシードパックの購入（Pyth Entropy統合）
+    /// 300 $WEEDを燃焼してPyth Entropyで真の乱数を使用した高レアリティ種を獲得
     /// 
     /// # Parameters
     /// * `quantity` - 購入数量（1-100）
+    /// * `user_entropy_seed` - ユーザー提供の乱数シード（追加の乱数性確保）
     /// 
-    /// # 確率テーブル
+    /// # Pyth Entropy統合
+    /// - コミットフェーズ: 購入時にPyth Entropyにランダム要求
+    /// - リビールフェーズ: 開封時にPyth Entropyから結果取得
+    /// - 二重ランダム性: ユーザーシード + オラクルシード
+    /// 
+    /// # 確率テーブル（Pyth Entropy使用）
     /// - Seed1 (100GP): 42.23%
     /// - Seed2 (180GP): 24.44%
     /// - Seed3 (420GP): 13.33%
     /// - ...最高レアSeed9 (60000GP): 0.56%
     /// 
-    /// # トークン経済
-    /// - 支払い$WEEDは100%燃焼（デフレ機構）
-    /// - パック開封で実際の種が決定
-    pub fn purchase_seed_pack(ctx: Context<PurchaseSeedPack>, quantity: u8) -> Result<()> {
-        instructions::seeds::purchase_seed_pack(ctx, quantity)
+    /// # セキュリティ
+    /// - 真の乱数による公平性保証
+    /// - 予測不可能な結果
+    /// - 透明性のあるオンチェーン検証
+    pub fn purchase_seed_pack(ctx: Context<PurchaseSeedPack>, quantity: u8, user_entropy_seed: u64) -> Result<()> {
+        instructions::seeds::purchase_seed_pack(ctx, quantity, user_entropy_seed)
     }
 
     /// Open seed pack to reveal seeds
@@ -236,6 +267,13 @@ pub mod farm_game {
         instructions::seeds::remove_seed(ctx, seed_id)
     }
 
+    // ===== TRADING SYSTEM INSTRUCTIONS =====
+
+    /// Transfer tokens with 2% fee
+    pub fn transfer_with_fee(ctx: Context<TransferWithFee>, amount: u64) -> Result<()> {
+        instructions::transfer::transfer_with_fee(ctx, amount)
+    }
+
     /// Convert accumulated fees to SOL via Meteora DEX
     pub fn convert_fees_to_sol(ctx: Context<ConvertFeesToSol>) -> Result<()> {
         instructions::meteora::convert_fees_to_sol(ctx)
@@ -251,7 +289,3 @@ pub mod farm_game {
         instructions::meteora::update_meteora_config(ctx, meteora_pool, pool_weed_vault, pool_sol_vault)
     }
 }
-
-// 戦略的ユーザージャーニーテストモジュール
-#[cfg(test)]
-mod tests;

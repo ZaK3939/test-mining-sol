@@ -98,6 +98,101 @@
         
         .info-item {
             background: #e9ecef;
+        }
+        
+        /* 管理者ダッシュボード用のスタイル */
+        .init-step {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            background: #f8f9fa;
+            border-left: 4px solid #6c757d;
+        }
+        
+        .init-step.completed {
+            background: #d4edda;
+            border-left-color: #28a745;
+        }
+        
+        .init-step.error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+        }
+        
+        .step-indicator {
+            margin-right: 10px;
+            font-size: 16px;
+            min-width: 20px;
+        }
+        
+        .step-details {
+            margin-left: 30px;
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        
+        .health-alert {
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        
+        .health-alert.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .health-alert.warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        
+        .health-alert.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .metric-card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #495057;
+            margin: 10px 0;
+        }
+        
+        .metric-label {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .auto-refresh-active {
+            background: #28a745 !important;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .info-item {
+            background: #e9ecef;
             padding: 15px;
             border-radius: 8px;
         }
@@ -157,16 +252,17 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🏭 Solana Facility Game</h1>
-            <p>TypeScript フロントエンドデモ - Helius RPC接続テスト</p>
-            <div style="background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 15px; margin: 15px 0; text-align: left;">
-                <h4 style="margin-top: 0; color: #0066cc;">📋 使用手順</h4>
+            <h1>🏭 Solana Facility Game - 管理者ダッシュボード</h1>
+            <p>Deploy済みプログラムの動作確認・監視・テストツール</p>
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 15px 0; text-align: left;">
+                <h4 style="margin-top: 0; color: #856404;">🛠️ 管理者フロー</h4>
                 <ol style="margin: 10px 0; padding-left: 20px; color: #333;">
-                    <li><strong>ウォレット接続</strong> - Phantom ウォレットを接続</li>
-                    <li><strong>SOL取得</strong> - 「💰 2 SOL を取得する」でテスト用SOLを入手</li>
-                    <li><strong>ユーザー初期化</strong> - アカウントを初期化</li>
-                    <li><strong>施設購入</strong> - 最初の施設を購入</li>
-                    <li><strong>機能テスト</strong> - 報酬請求、アップグレードなどを試す</li>
+                    <li><strong>🔗 ウォレット接続</strong> - 管理者ウォレットでPhantom接続</li>
+                    <li><strong>💰 SOL取得</strong> - テスト用SOL入手（devnet）</li>
+                    <li><strong>🏥 ヘルスチェック</strong> - システム全体の健全性確認</li>
+                    <li><strong>🔄 初期化確認</strong> - 必要な初期化ステップの完了状況</li>
+                    <li><strong>📊 統計監視</strong> - グローバル統計とシステム指標</li>
+                    <li><strong>🧪 機能テスト</strong> - 各機能の動作確認とテスト</li>
                 </ol>
             </div>
         </div>
@@ -197,6 +293,130 @@
                 <div><strong>アドレス:</strong> <span id="wallet-address">-</span></div>
                 <div><strong>残高:</strong> <span id="wallet-balance">-</span> SOL</div>
             </div>
+        </div>
+
+        <!-- システムヘルスチェック -->
+        <div class="status-card" style="border: 2px solid #17a2b8; background: #f0f9ff;">
+            <h3>🏥 システムヘルスチェック</h3>
+            <div style="margin-bottom: 15px; color: #0c5460;">
+                <strong>Deploy済みプログラムの状態監視</strong><br>
+                システム全体の健全性を確認できます。
+            </div>
+            <div class="info-section">
+                <div class="info-item">
+                    <label>🔧 設定状態:</label>
+                    <div class="value" id="health-config-status">チェック中...</div>
+                </div>
+                <div class="info-item">
+                    <label>🪙 報酬ミント状態:</label>
+                    <div class="value" id="health-mint-status">チェック中...</div>
+                </div>
+                <div class="info-item">
+                    <label>📊 グローバル統計:</label>
+                    <div class="value" id="health-global-stats">チェック中...</div>
+                </div>
+                <div class="info-item">
+                    <label>💰 手数料プール:</label>
+                    <div class="value" id="health-fee-pool">チェック中...</div>
+                </div>
+                <div class="info-item">
+                    <label>🔗 プログラム接続:</label>
+                    <div class="value" id="health-program-connection">チェック中...</div>
+                </div>
+                <div class="info-item">
+                    <label>⏱️ 最終チェック:</label>
+                    <div class="value" id="health-last-check">未実行</div>
+                </div>
+            </div>
+            <button id="run-health-check" class="button" style="background: #17a2b8; font-size: 16px; padding: 12px 24px;">
+                🏥 ヘルスチェック実行
+            </button>
+            <button id="auto-health-toggle" class="button" style="background: #6c757d; font-size: 14px;">
+                🔄 自動チェック: OFF
+            </button>
+            <div id="health-alert" style="margin-top: 15px; padding: 10px; border-radius: 5px; display: none;">
+                <!-- アラート表示エリア -->
+            </div>
+        </div>
+
+        <!-- グローバル統計ダッシュボード -->
+        <div class="status-card" style="border: 2px solid #28a745; background: #f8fff9;">
+            <h3>📊 グローバル統計ダッシュボード</h3>
+            <div style="margin-bottom: 15px; color: #155724;">
+                <strong>システム全体の統計情報</strong><br>
+                ゲーム経済の健全性を監視できます。
+            </div>
+            <div class="info-section">
+                <div class="info-item">
+                    <label>💪 総Grow Power:</label>
+                    <div class="value" id="global-total-grow-power">取得中...</div>
+                </div>
+                <div class="info-item">
+                    <label>🏡 総農場数:</label>
+                    <div class="value" id="global-total-farms">取得中...</div>
+                </div>
+                <div class="info-item">
+                    <label>🪙 総発行量:</label>
+                    <div class="value" id="global-total-supply">取得中...</div>
+                </div>
+                <div class="info-item">
+                    <label>⚡ 現在の報酬レート:</label>
+                    <div class="value" id="global-reward-rate">取得中...</div>
+                </div>
+                <div class="info-item">
+                    <label>⏰ 最終更新時刻:</label>
+                    <div class="value" id="global-last-update">取得中...</div>
+                </div>
+                <div class="info-item">
+                    <label>💰 手数料プール残高:</label>
+                    <div class="value" id="global-fee-pool-balance">取得中...</div>
+                </div>
+            </div>
+            <button id="refresh-global-stats" class="button" style="background: #28a745;">
+                📊 統計更新
+            </button>
+        </div>
+
+        <!-- 初期化フローチェッカー -->
+        <div class="status-card" style="border: 2px solid #fd7e14; background: #fff8f0;">
+            <h3>🔄 初期化フローチェッカー</h3>
+            <div style="margin-bottom: 15px; color: #8a4a00;">
+                <strong>システム初期化の進行状況</strong><br>
+                必要な初期化ステップを順序通りに確認できます。
+            </div>
+            <div id="init-flow-status">
+                <div class="init-step" id="step-config">
+                    <span class="step-indicator" id="indicator-config">⏳</span>
+                    <div>
+                        <strong>1. Config初期化</strong>
+                        <div class="step-details" id="details-config">チェック中...</div>
+                    </div>
+                </div>
+                <div class="init-step" id="step-mint">
+                    <span class="step-indicator" id="indicator-mint">⏳</span>
+                    <div>
+                        <strong>2. 報酬ミント作成</strong>
+                        <div class="step-details" id="details-mint">チェック中...</div>
+                    </div>
+                </div>
+                <div class="init-step" id="step-global-stats">
+                    <span class="step-indicator" id="indicator-global-stats">⏳</span>
+                    <div>
+                        <strong>3. グローバル統計初期化</strong>
+                        <div class="step-details" id="details-global-stats">チェック中...</div>
+                    </div>
+                </div>
+                <div class="init-step" id="step-fee-pool">
+                    <span class="step-indicator" id="indicator-fee-pool">⏳</span>
+                    <div>
+                        <strong>4. 手数料プール初期化</strong>
+                        <div class="step-details" id="details-fee-pool">チェック中...</div>
+                    </div>
+                </div>
+            </div>
+            <button id="check-init-flow" class="button" style="background: #fd7e14;">
+                🔄 初期化状況確認
+            </button>
         </div>
 
         <!-- ゲーム情報 -->

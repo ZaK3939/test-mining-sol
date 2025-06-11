@@ -24,11 +24,9 @@ function getConfig(): AppConfig {
   }
 
   const config: AppConfig = {
-    programId: '7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB',
+    programId: 'FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B',
     network: 'devnet',
-    rpcUrl: heliusApiKey
-      ? `https://devnet.helius-rpc.com/?api-key=${heliusApiKey}`
-      : 'https://api.devnet.solana.com',
+    rpcUrl: 'https://api.devnet.solana.com', // Always use public devnet for stability
   };
 
   console.log('📋 設定読み込み完了:');

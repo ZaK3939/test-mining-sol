@@ -82,8 +82,9 @@ export const TEST_CONSTANTS = {
 
   // プログラム ID 設定
   PROGRAM_IDS: {
-    // 設定ファイルから実際の値を取得することを推奨
-    EXPECTED: '7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB',
+    // 実際のデプロイ済みプログラムID
+    EXPECTED: 'FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B',
+    CONFIG_FILE: '7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB', // config.tsの設定
     LEGACY: 'EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89',
   },
 } as const;
