@@ -139,4 +139,20 @@ pub enum GameError {
     
     #[msg("Slippage tolerance exceeded")]
     SlippageToleranceExceeded,
+    
+    // Hash-based invite system errors
+    #[msg("Invite code has already been used")]
+    InviteCodeAlreadyUsed,
+    
+    #[msg("Invite code is inactive")]
+    InviteCodeInactive,
+    
+    #[msg("Seed type limit reached - maximum 100 seeds per type")]
+    SeedTypeLimitReached,
+    
+    #[msg("Hash verification failed for invite code")]
+    HashVerificationFailed,
+    
+    #[msg("Invalid salt for hash generation")]
+    InvalidSalt,
 }

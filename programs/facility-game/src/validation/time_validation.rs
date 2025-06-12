@@ -4,7 +4,6 @@
 use anchor_lang::prelude::*;
 use crate::error::GameError;
 use crate::constants::*;
-use crate::state::*;
 
 // ===== TIME CONSTRAINTS =====
 
@@ -26,22 +25,6 @@ pub fn validate_timestamp_not_future(timestamp: i64, current_time: i64) -> Resul
     Ok(())
 }
 
-/// Validate farm space upgrade is complete
-pub fn validate_upgrade_complete(farm_space: &FarmSpace, current_time: i64) -> Result<()> {
-    // Check if upgrade is in progress
-    require!(
-        farm_space.upgrade_start_time > 0,
-        GameError::NoUpgradeInProgress
-    );
-    
-    // Check if cooldown has passed
-    require!(
-        current_time >= farm_space.upgrade_start_time + UPGRADE_COOLDOWN,
-        GameError::UpgradeStillInProgress
-    );
-    
-    Ok(())
-}
 
 /// Validate timing for halving mechanism
 pub fn validate_halving_timing(
@@ -100,41 +83,6 @@ mod tests {
         assert!(validate_timestamp_not_future(future_time, current_time).is_err());
     }
 
-    #[test]
-    fn test_upgrade_completion_validation() {
-        let current_time = 1000000i64;
-        let start_time = current_time - UPGRADE_COOLDOWN;
-        
-        let farm_space_ready = FarmSpace {
-            owner: Pubkey::new_unique(),
-            level: 1,
-            capacity: 4,
-            seed_count: 0,
-            total_grow_power: 0,
-            upgrade_start_time: start_time,
-            upgrade_target_level: 2,
-            reserve: [0; 32],
-        };
-        
-        let farm_space_not_ready = FarmSpace {
-            upgrade_start_time: current_time - UPGRADE_COOLDOWN + 1,
-            ..farm_space_ready
-        };
-        
-        let farm_space_no_upgrade = FarmSpace {
-            upgrade_start_time: 0,
-            ..farm_space_ready
-        };
-        
-        // Valid upgrade completion
-        assert!(validate_upgrade_complete(&farm_space_ready, current_time).is_ok());
-        
-        // Invalid - not enough time passed
-        assert!(validate_upgrade_complete(&farm_space_not_ready, current_time).is_err());
-        
-        // Invalid - no upgrade in progress
-        assert!(validate_upgrade_complete(&farm_space_no_upgrade, current_time).is_err());
-    }
 
     #[test]
     fn test_halving_timing_validation() {

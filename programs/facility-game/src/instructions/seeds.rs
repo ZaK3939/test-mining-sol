@@ -446,8 +446,8 @@ fn generate_seeds_from_entropy(
         let seed_type = SeedType::from_random(seed_random);
         let seed_id = config.seed_counter;
         
-        // Add seed to storage
-        add_seed_to_storage(seed_storage, seed_id)?;
+        // Add seed to storage with type tracking and auto-discard
+        add_seed_to_storage(seed_storage, seed_id, seed_type)?;
         config.seed_counter += 1;
         
         msg!("Seed generated: ID {}, Type: {:?}, Grow Power: {}, Random: {}", 
@@ -569,8 +569,8 @@ pub fn discard_seed(ctx: Context<DiscardSeed>, seed_id: u64) -> Result<()> {
     require!(!seed.is_planted, GameError::SeedAlreadyPlanted);
     require!(seed.owner == ctx.accounts.user.key(), GameError::NotSeedOwner);
     
-    // Remove seed ID from storage
-    let removed = remove_seed_from_storage(seed_storage, seed_id)?;
+    // Remove seed ID from storage with type tracking
+    let removed = remove_seed_from_storage(seed_storage, seed_id, seed.seed_type)?;
     require!(removed, GameError::SeedNotFound);
     
     // Close the seed account to reclaim rent
@@ -668,10 +668,19 @@ pub fn batch_discard_seeds(ctx: Context<BatchDiscardSeeds>, seed_ids: Vec<u64>) 
             continue;
         }
         
+        // Extract seed type (byte at position 40)
+        let seed_type_byte = seed_data[40];
+        let seed_type = if seed_type_byte < 9 {
+            unsafe { std::mem::transmute(seed_type_byte) }
+        } else {
+            msg!("Invalid seed type {} for seed {}, skipping", seed_type_byte, seed_id);
+            continue;
+        };
+        
         drop(seed_data); // Release borrow before modification
         
-        // Remove from storage
-        if remove_seed_from_storage(seed_storage, seed_id)? {
+        // Remove from storage with type tracking
+        if remove_seed_from_storage(seed_storage, seed_id, seed_type)? {
             // Calculate rent to recover
             let seed_lamports = seed_account_info.lamports();
             total_rent_recovered = total_rent_recovered

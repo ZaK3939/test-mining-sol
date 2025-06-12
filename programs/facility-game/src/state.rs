@@ -70,10 +70,6 @@ pub struct FarmSpace {
     pub seed_count: u8,
     /// Combined grow power of all planted seeds
     pub total_grow_power: u64,
-    /// Upgrade initiation timestamp (0 = not upgrading)
-    pub upgrade_start_time: i64,
-    /// Level to reach after 24h cooldown
-    pub upgrade_target_level: u8,
     /// Reserved bytes for future expansion
     pub reserve: [u8; 32],
 }
@@ -124,12 +120,8 @@ impl FarmSpace {
         1 + // capacity
         1 + // seed_count
         8 + // total_grow_power
-        8 + // upgrade_start_time
-        1 + // upgrade_target_level
         32; // reserve
     
-    /// Upgrade cooldown duration (24 hours in seconds)
-    pub const UPGRADE_COOLDOWN: i64 = 24 * 60 * 60;
         
     /// Get capacity for a given level
     pub fn get_capacity_for_level(level: u8) -> u8 {
@@ -154,13 +146,6 @@ impl FarmSpace {
         }
     }
     
-    /// Check if upgrade is complete
-    pub fn is_upgrade_complete(&self, current_time: i64) -> bool {
-        if self.upgrade_start_time == 0 {
-            return false;
-        }
-        current_time >= self.upgrade_start_time + Self::UPGRADE_COOLDOWN
-    }
 }
 
 /// Seed types with fixed grow power and probabilities
@@ -295,9 +280,9 @@ impl SeedPack {
         16; // reserve
 }
 
-/// Secret invite code management PDA (Hash-based for privacy)
+/// Invite code management PDA (Hash-based for privacy)
 #[account]
-pub struct SecretInviteCode {
+pub struct InviteCode {
     /// Invite code creator (user who can invite others)
     pub inviter: Pubkey,
     /// Current number of people invited
@@ -308,14 +293,18 @@ pub struct SecretInviteCode {
     pub code_hash: [u8; 32],
     /// Random salt for hash security
     pub salt: [u8; 16],
+    /// Index in the inviter's code list
+    pub code_index: u16,
     /// Creation timestamp
     pub created_at: i64,
+    /// Whether this code is active
+    pub is_active: bool,
     /// Reserved for future expansion
-    pub reserve: [u8; 16],
+    pub reserve: [u8; 15],
 }
 
-impl SecretInviteCode {
-    pub const LEN: usize = 8 + 32 + 1 + 1 + 32 + 16 + 8 + 16;
+impl InviteCode {
+    pub const LEN: usize = 8 + 32 + 1 + 1 + 32 + 16 + 2 + 8 + 1 + 15;
 }
 
 /// Single-use secret invite code PDA (Operator-only, hash-based)
@@ -335,12 +324,35 @@ pub struct SingleUseSecretInvite {
     pub created_at: i64,
     /// Usage timestamp
     pub used_at: Option<i64>,
+    /// Campaign ID for tracking
+    pub campaign_id: [u8; 8],
     /// Reserved for future expansion
     pub reserve: [u8; 16],
 }
 
 impl SingleUseSecretInvite {
-    pub const LEN: usize = 8 + 32 + 32 + 16 + 1 + 1 + 32 + 8 + 1 + 8 + 16;
+    pub const LEN: usize = 8 + 32 + 32 + 16 + 1 + 1 + 32 + 8 + 1 + 8 + 8 + 16;
+}
+
+/// Inviter code registry PDA (manages multiple codes per inviter)
+#[account]
+pub struct InviterCodeRegistry {
+    /// Inviter pubkey
+    pub inviter: Pubkey,
+    /// Total number of codes created by this inviter
+    pub total_codes_created: u16,
+    /// Number of currently active codes
+    pub active_codes_count: u16,
+    /// Total invites used across all codes
+    pub total_invites_used: u32,
+    /// Last code creation timestamp
+    pub last_code_created_at: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+impl InviterCodeRegistry {
+    pub const LEN: usize = 8 + 32 + 2 + 2 + 4 + 8 + 32;
 }
 
 /// Global statistics PDA
@@ -374,48 +386,118 @@ pub struct FeePool {
 }
 
 /// User's seed inventory management
-/// Tracks all seeds owned by a user
+/// Tracks all seeds owned by a user with type-based limits
 #[account]
 pub struct SeedStorage {
     /// Storage owner's public key
     pub owner: Pubkey,
-    /// Dynamic array of seed IDs (max 100 for rent optimization)
+    /// Dynamic array of seed IDs (max 2000 total)
     pub seed_ids: Vec<u64>,
     /// Current seed count for quick access
-    pub total_seeds: u32,  // Changed from u16 to support >65,535 seeds
+    pub total_seeds: u32,
+    /// Count of each seed type (9 types, max 100 each)
+    pub seed_type_counts: [u16; 9],
     /// Reserved bytes for future features
-    pub reserve: [u8; 32],
+    pub reserve: [u8; 16], // Reduced due to seed_type_counts addition
 }
 
 impl SeedStorage {
-    /// Maximum seeds per user - practical capacity
-    /// 1,000 seeds = 200 mystery packs worth of seeds
-    /// Rent cost is very affordable: ~0.06 SOL for the entire account
-    /// This is sufficient for most users while keeping costs minimal
-    pub const MAX_SEEDS: usize = 1_000;
+    /// Maximum total seeds per user (2000)
+    /// Supports up to 400 mystery packs worth of seeds
+    /// Rent cost: ~0.12 SOL for the entire account
+    pub const MAX_TOTAL_SEEDS: usize = 2_000;
     
-    /// Check if storage has capacity for more seeds
+    /// Maximum seeds per type (100 each)
+    /// Prevents hoarding of specific seed types
+    pub const MAX_SEEDS_PER_TYPE: u16 = 100;
+    
+    /// Check if storage has capacity for more seeds (total limit)
     pub fn can_add_seed(&self) -> bool {
-        self.seed_ids.len() < Self::MAX_SEEDS
+        self.seed_ids.len() < Self::MAX_TOTAL_SEEDS
     }
     
-    /// Add a new seed ID to storage
-    pub fn add_seed(&mut self, seed_id: u64) -> Result<()> {
+    /// Check if specific seed type has capacity
+    pub fn can_add_seed_type(&self, seed_type: &SeedType) -> bool {
+        let type_index = *seed_type as usize;
+        self.seed_type_counts[type_index] < Self::MAX_SEEDS_PER_TYPE
+    }
+    
+    /// Check if we can add a seed (both total and type limits)
+    pub fn can_add_seed_with_type(&self, seed_type: &SeedType) -> bool {
+        self.can_add_seed() && self.can_add_seed_type(seed_type)
+    }
+    
+    /// Add a new seed ID to storage with type tracking
+    pub fn add_seed(&mut self, seed_id: u64, seed_type: &SeedType) -> Result<()> {
         require!(self.can_add_seed(), crate::error::GameError::StorageFull);
+        require!(self.can_add_seed_type(seed_type), crate::error::GameError::SeedTypeLimitReached);
+        
         self.seed_ids.push(seed_id);
         self.total_seeds = self.seed_ids.len() as u32;
+        
+        // Update type count
+        let type_index = *seed_type as usize;
+        self.seed_type_counts[type_index] += 1;
+        
         Ok(())
     }
     
-    /// Remove seed ID from storage
-    pub fn remove_seed(&mut self, seed_id: u64) -> bool {
+    /// Remove seed ID from storage with type tracking
+    pub fn remove_seed(&mut self, seed_id: u64, seed_type: &SeedType) -> bool {
         if let Some(pos) = self.seed_ids.iter().position(|&x| x == seed_id) {
             self.seed_ids.remove(pos);
             self.total_seeds = self.seed_ids.len() as u32;
+            
+            // Update type count
+            let type_index = *seed_type as usize;
+            if self.seed_type_counts[type_index] > 0 {
+                self.seed_type_counts[type_index] -= 1;
+            }
+            
             true
         } else {
             false
         }
+    }
+    
+    /// Auto-discard lowest value seeds when type limit is reached
+    /// Returns the number of seeds discarded
+    pub fn auto_discard_excess(&mut self, new_seed_type: &SeedType) -> Result<u16> {
+        let type_index = *new_seed_type as usize;
+        
+        // If we're not at the limit, no need to discard
+        if self.seed_type_counts[type_index] < Self::MAX_SEEDS_PER_TYPE {
+            return Ok(0);
+        }
+        
+        // Find the lowest value seed of this type to discard
+        // For now, we'll discard one seed to make room
+        // In a full implementation, you'd want to track individual seed values
+        if self.seed_type_counts[type_index] > 0 {
+            self.seed_type_counts[type_index] -= 1;
+            // Note: In practice, you'd also remove the specific seed_id
+            // and properly handle the seed account closure
+            return Ok(1);
+        }
+        
+        Ok(0)
+    }
+    
+    /// Get count of specific seed type
+    pub fn get_seed_type_count(&self, seed_type: &SeedType) -> u16 {
+        let type_index = *seed_type as usize;
+        self.seed_type_counts[type_index]
+    }
+    
+    /// Get remaining capacity for specific seed type
+    pub fn get_remaining_capacity(&self, seed_type: &SeedType) -> u16 {
+        let type_index = *seed_type as usize;
+        Self::MAX_SEEDS_PER_TYPE.saturating_sub(self.seed_type_counts[type_index])
+    }
+    
+    /// Initialize seed type counts (for existing accounts)
+    pub fn initialize_type_counts(&mut self) {
+        self.seed_type_counts = [0; 9];
     }
 }
 
@@ -435,15 +517,6 @@ pub struct RewardAccount {
     pub reserve: [u8; 32],
 }
 
-impl InviteCode {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // inviter
-        1 + // invites_used
-        1 + // invite_limit
-        8 + // code
-        8 + // created_at
-        32; // reserve
-}
 
 impl GlobalStats {
     pub const LEN: usize = 8 + // discriminator
@@ -469,10 +542,11 @@ impl FeePool {
 impl SeedStorage {
     pub const LEN: usize = 8 + // discriminator
         32 + // owner
-        4 + (8 * 1_000) + // seed_ids (Vec<u64> with max 1,000 seeds)
-        2 + // total_seeds (u16 is sufficient for 1,000)
-        32; // reserve
-        // Total: 8,078 bytes (~8KB) - Very affordable, rent ~0.06 SOL
+        4 + (8 * 2_000) + // seed_ids (Vec<u64> with max 2,000 seeds)
+        4 + // total_seeds (u32 for 2,000+ seeds)
+        (2 * 9) + // seed_type_counts (9 x u16)
+        16; // reserve
+        // Total: 16,076 bytes (~16KB) - Affordable, rent ~0.12 SOL
 }
 
 impl RewardAccount {

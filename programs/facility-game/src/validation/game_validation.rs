@@ -34,11 +34,6 @@ pub fn validate_can_upgrade_farm_space(farm_space: &FarmSpace) -> Result<()> {
         GameError::MaxLevelReached
     );
     
-    // Check if not already upgrading
-    require!(
-        farm_space.upgrade_start_time == 0,
-        GameError::AlreadyUpgrading
-    );
     
     Ok(())
 }
@@ -150,10 +145,10 @@ pub fn validate_invite_code_format(code: &[u8; 8]) -> Result<()> {
     Ok(())
 }
 
-/// Validate invite limit not exceeded
-pub fn validate_invite_limit(invite_code: &InviteCode) -> Result<()> {
+/// Validate invite limit not exceeded (for hash-based system)
+pub fn validate_secret_invite_limit(secret_invite_code: &InviteCode) -> Result<()> {
     require!(
-        invite_code.invites_used < invite_code.invite_limit,
+        secret_invite_code.invites_used < secret_invite_code.invite_limit,
         GameError::InviteCodeLimitReached
     );
     Ok(())
@@ -227,8 +222,6 @@ mod tests {
             capacity: 8,
             seed_count: 4,
             total_grow_power: 800,
-            upgrade_start_time: 0,
-            upgrade_target_level: 2,
             reserve: [0; 32],
         };
         
@@ -242,10 +235,6 @@ mod tests {
             ..farm_space
         };
         
-        let upgrading_farm = FarmSpace {
-            upgrade_start_time: 1000000, // Currently upgrading
-            ..farm_space
-        };
         
         // Valid ownership
         assert!(validate_farm_space_ownership(&farm_space, owner).is_ok());
@@ -265,8 +254,6 @@ mod tests {
         // Cannot upgrade (max level)
         assert!(validate_can_upgrade_farm_space(&max_level_farm).is_err());
         
-        // Cannot upgrade (already upgrading)
-        assert!(validate_can_upgrade_farm_space(&upgrading_farm).is_err());
     }
 
     #[test]
@@ -373,8 +360,6 @@ mod tests {
             capacity: 4,
             seed_count: 2, // Has capacity
             total_grow_power: 200,
-            upgrade_start_time: 0, // Not upgrading
-            upgrade_target_level: 1,
             reserve: [0; 32],
         };
         

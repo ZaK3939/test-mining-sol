@@ -7,13 +7,13 @@
 pub mod admin;
 pub mod user;
 pub mod farm;
-pub mod rewards;
+// pub mod rewards; // Deprecated - functionality moved to referral_rewards
 pub mod referral_rewards; // 紹介料蓄積・請求システム
-pub mod transfer;
+// pub mod transfer; // Deprecated - use transfer_improved instead
 pub mod transfer_improved; // 改善されたTransferシステム
 // pub mod mystery; // Deprecated - functionality moved to seeds.rs
 pub mod seeds;
-pub mod invite;
+pub mod invite; // Hash-based invite system
 pub mod meteora;
 // pub mod meteora_minimal; // Minimal Meteora integration - Disabled
 // pub mod meteora_admin; // Meteora管理者制御 - Temporarily disabled
@@ -22,9 +22,9 @@ pub mod meteora;
 pub use admin::*;
 pub use user::*;
 pub use farm::*;
-pub use rewards::*;
+// pub use rewards::*; // Deprecated - functionality moved to referral_rewards
 pub use referral_rewards::*;
-pub use transfer::*;
+// pub use transfer::*; // Deprecated
 pub use transfer_improved::*;
 // pub use mystery::*; // Deprecated
 pub use seeds::*;

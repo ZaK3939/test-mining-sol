@@ -87,7 +87,7 @@ describe('My Component', () => {
     
     await services.gameService.claimRewards(callbacks);
     
-    ServiceAssertions.expectTransaction(services, 'claim_reward');
+    ServiceAssertions.expectTransaction(services, 'claim_reward_with_referral_rewards');
     CallbackAssertions.expectSuccessCallback(callbacks);
   });
 });
@@ -142,7 +142,7 @@ CallbackAssertions.expectLoadingStates(callbacks);
 
 // Service assertions
 ServiceAssertions.expectWalletConnection(services);
-ServiceAssertions.expectTransaction(services, 'claim_reward');
+ServiceAssertions.expectTransaction(services, 'claim_reward_with_referral_rewards');
 ServiceAssertions.expectMethodCalledWith(services, 'anchorClient', 'claimReward');
 
 // Game state assertions

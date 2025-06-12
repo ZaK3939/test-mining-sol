@@ -21,6 +21,7 @@ export interface TestPDAs {
   rewardMintPda: PublicKey;
   mintAuthorityPda: PublicKey;
   feePoolPda: PublicKey;
+  treasuryPda: PublicKey;
 }
 
 export interface TestUser {
@@ -31,6 +32,7 @@ export interface TestUser {
   seedStoragePda: PublicKey;
   inviteCodePda: PublicKey;
   seedPackPda: PublicKey;
+  initialSeedPda: PublicKey;
   tokenAccount: PublicKey;
 }
 
@@ -43,13 +45,17 @@ export class TestEnvironment {
     public pdas: TestPDAs
   ) {}
 
+  get adminKeypair(): Keypair {
+    return this.accounts.admin;
+  }
+
   static async setup(): Promise<TestEnvironment> {
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
     const program = anchor.workspace.FarmGame as Program<FarmGame>;
 
     const accounts = await TestEnvironment.createTestAccounts(provider.connection);
-    const pdas = TestEnvironment.findPDAs(program.programId);
+    const pdas = TestEnvironment.findPDAs(program.programId, accounts);
 
     return new TestEnvironment(program, provider, provider.connection, accounts, pdas);
   }
@@ -78,7 +84,7 @@ export class TestEnvironment {
     return { admin, treasury, protocolReferralAddress, users };
   }
 
-  private static findPDAs(programId: PublicKey): TestPDAs {
+  private static findPDAs(programId: PublicKey, accounts: TestAccounts): TestPDAs {
     const [configPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("config")],
       programId
@@ -110,6 +116,7 @@ export class TestEnvironment {
       rewardMintPda,
       mintAuthorityPda,
       feePoolPda,
+      treasuryPda: accounts.treasury.publicKey,
     };
   }
 
@@ -178,8 +185,8 @@ export async function setupTestEnvironment(): Promise<TestEnvironment> {
 }
 
 // Create a test user with all necessary PDAs
-export async function createUser(testEnv: TestEnvironment, name: string): Promise<TestUser> {
-  const keypair = Keypair.generate();
+export async function createUser(testEnv: TestEnvironment, name: string, existingKeypair?: Keypair): Promise<TestUser> {
+  const keypair = existingKeypair || Keypair.generate();
   
   // Airdrop SOL for transactions
   await testEnv.connection.confirmTransaction(
@@ -213,6 +220,11 @@ export async function createUser(testEnv: TestEnvironment, name: string): Promis
     testEnv.program.programId
   );
 
+  const [initialSeedPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("seed"), keypair.publicKey.toBuffer(), Buffer.from([0, 0, 0, 0, 0, 0, 0, 0])], // seed_id 0
+    testEnv.program.programId
+  );
+
   // Create token account
   const tokenAccount = await getOrCreateAssociatedTokenAccount(
     testEnv.connection,
@@ -229,6 +241,7 @@ export async function createUser(testEnv: TestEnvironment, name: string): Promis
     seedStoragePda,
     inviteCodePda,
     seedPackPda,
+    initialSeedPda,
     tokenAccount: tokenAccount.address,
   };
 }

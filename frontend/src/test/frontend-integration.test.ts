@@ -281,16 +281,16 @@ describe('Frontend Integration - New Program Communication', () => {
       const instructions = idl.instructions.map((i) => i.name);
       const expectedInstructions = [
         'buy_farm_space',
-        'claim_referral_rewards',
-        'claim_reward',
+        'claim_reward_with_referral_rewards',
+        'create_invite_code',
         'create_reward_mint',
-        'distribute_referral_reward',
         'init_user',
         'initialize_config',
         'open_seed_pack',
         'purchase_seed_pack',
         'transfer_with_fee',
         'upgrade_farm_space',
+        'use_invite_code',
       ];
 
       for (const instruction of expectedInstructions) {

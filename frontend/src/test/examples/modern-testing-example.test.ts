@@ -84,7 +84,7 @@ describe('Modern Testing Framework Example', () => {
 
       // =============== ASSERTIONS ===============
       TransactionAssertions.expectTransactionSuccess(claimResult);
-      ServiceAssertions.expectTransaction(services, 'claim_reward');
+      ServiceAssertions.expectTransaction(services, 'claim_reward_with_referral_rewards');
       CallbackAssertions.expectSuccessCallback(callbacks, /WEEDを獲得しました/);
       
       // Verify balance increased
@@ -112,7 +112,7 @@ describe('Modern Testing Framework Example', () => {
       });
 
       // Multiple transaction types
-      ServiceAssertions.expectTransaction(services, 'claim_reward');
+      ServiceAssertions.expectTransaction(services, 'claim_reward_with_referral_rewards');
       ServiceAssertions.expectTransaction(services, 'seed_pack');
       expect(services.anchorClient.claimReferralRewards).toHaveBeenCalled();
 

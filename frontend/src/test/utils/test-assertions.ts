@@ -148,7 +148,7 @@ export class ServiceAssertions {
    */
   static expectTransaction(
     services: MockServices,
-    transactionType: 'user_init' | 'farm_purchase' | 'claim_reward' | 'seed_pack' | 'upgrade'
+    transactionType: 'user_init' | 'farm_purchase' | 'claim_reward_with_referral_rewards' | 'seed_pack' | 'upgrade'
   ): void {
     switch (transactionType) {
       case 'user_init':
@@ -157,8 +157,8 @@ export class ServiceAssertions {
       case 'farm_purchase':
         expect(services.anchorClient.buyFarmSpace).toHaveBeenCalled();
         break;
-      case 'claim_reward':
-        expect(services.anchorClient.claimReward).toHaveBeenCalled();
+      case 'claim_reward_with_referral_rewards':
+        expect(services.anchorClient.claimRewardWithReferralRewards).toHaveBeenCalled();
         break;
       case 'seed_pack':
         expect(services.anchorClient.purchaseSeedPack).toHaveBeenCalled();

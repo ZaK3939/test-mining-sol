@@ -141,8 +141,8 @@ pub mod farm_game {
         instructions::farm::buy_farm_space(ctx)
     }
 
-    /// 農場スペースのアップグレード開始
-    /// $WEEDを消費して24時間後に容量増加
+    /// 農場スペースのアップグレード（即座実行）
+    /// $WEEDを消費して即座に容量増加
     /// 
     /// # アップグレードコスト
     /// - Lv1→2: 3,500 WEED (容量 4→8)
@@ -150,67 +150,19 @@ pub mod farm_game {
     /// - Lv3→4: 20,000 WEED (容量 12→16)
     /// - Lv4→5: 25,000 WEED (容量 16→20)
     /// 
-    /// # クールダウン機構
-    /// - 24時間の待機時間
-    /// - complete_farm_space_upgradeで完了
+    /// # 即座実行
+    /// - クールダウンなし、即座にアップグレード完了
     pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
         instructions::farm::upgrade_farm_space(ctx)
     }
 
-    /// Complete farm space upgrade after cooldown
-    pub fn complete_farm_space_upgrade(ctx: Context<CompleteFarmSpaceUpgrade>) -> Result<()> {
-        instructions::farm::complete_farm_space_upgrade(ctx)
-    }
 
     // ===== REWARD SYSTEM INSTRUCTIONS =====
 
-    /// 報酬の請求
-    /// ユーザーの貢献度に応じた比例配分で$WEEDトークンを獲得
-    /// 
-    /// # 計算式
-    /// ```
-    /// 報酬 = (ユーザーGrow Power / 全体Grow Power) × 基本レート × 経過時間
-    /// ```
-    /// 
-    /// # 処理フロー
-    /// 1. 半減期チェック・適用
-    /// 2. ユーザーシェア計算
-    /// 3. トークンミント・配布
-    /// 4. 紹介報酬処理（L1: 10%, L2: 5%）
-    /// 5. タイムスタンプ更新
-    /// 
-    /// # 紹介システム
-    /// - Level 1 (直接招待): 10%の報酬
-    /// - Level 2 (間接招待): 5%の報酬
-    /// - プロトコル指定アドレスは報酬対象外
-    /// - 紹介者のアカウントが提供された場合に即座にミント
-    pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
-        instructions::rewards::claim_reward(ctx)
-    }
 
-    /// Distribute referral reward to referrer
-    pub fn distribute_referral_reward(ctx: Context<DistributeReferralReward>, reward_amount: u64) -> Result<()> {
-        instructions::rewards::distribute_referral_reward(ctx, reward_amount)
-    }
 
-    /// Distribute referral rewards during claim process
-    /// Called separately to handle Level 1 (10%) and Level 2 (5%) rewards
-    /// Automatically excludes protocol referral addresses
-    pub fn distribute_referral_on_claim(ctx: Context<DistributeReferralOnClaim>, base_reward: u64) -> Result<()> {
-        instructions::rewards::distribute_referral_on_claim(ctx, base_reward)
-    }
 
-    /// Complete referral distribution with Level 1 (10%) and Level 2 (5%) handling
-    /// Provides proper implementation for all referral scenarios including protocol addresses
-    /// Ensures correct reward percentages: 100%, 90%, or 85% for claimant depending on referral chain
-    pub fn distribute_complete_referral(ctx: Context<DistributeCompleteReferral>, base_reward: u64) -> Result<()> {
-        instructions::rewards::distribute_complete_referral(ctx, base_reward)
-    }
 
-    /// Claim accumulated referral rewards
-    pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
-        instructions::rewards::claim_referral_rewards(ctx)
-    }
     
     // ===== REFERRAL REWARD ACCUMULATION SYSTEM =====
     
@@ -251,21 +203,21 @@ pub mod farm_game {
     /// - 管理者による限度拡張可能
     /// - 多段階紹介報酬システム連携
     /// 
-    /// # 制約
-    /// - コードの重複不可
+    /// # セキュリティ
+    /// - ハッシュベースでプライバシー確保
     /// - 英数字のみ使用可能
     pub fn create_invite_code(ctx: Context<CreateInviteCode>, invite_code: [u8; 8]) -> Result<()> {
         instructions::invite::create_invite_code(ctx, invite_code)
     }
 
     /// Use invite code to initialize user with referrer
-    pub fn use_invite_code(ctx: Context<UseInviteCode>, invite_code: [u8; 8]) -> Result<()> {
-        instructions::invite::use_invite_code(ctx, invite_code)
-    }
-
-    /// Expand invite limit (admin only)
-    pub fn expand_invite_limit(ctx: Context<ExpandInviteLimit>, additional_invites: u8) -> Result<()> {
-        instructions::invite::expand_invite_limit(ctx, additional_invites)
+    /// Requires: plaintext code + inviter address
+    pub fn use_invite_code(
+        ctx: Context<UseInviteCode>, 
+        invite_code: [u8; 8],
+        inviter_pubkey: Pubkey
+    ) -> Result<()> {
+        instructions::invite::use_invite_code(ctx, invite_code, inviter_pubkey)
     }
 
     // ===== SEED SYSTEM INSTRUCTIONS =====
@@ -332,10 +284,6 @@ pub mod farm_game {
 
     // ===== TRADING SYSTEM INSTRUCTIONS =====
 
-    /// Transfer tokens with 2% fee
-    pub fn transfer_with_fee(ctx: Context<TransferWithFee>, amount: u64) -> Result<()> {
-        instructions::transfer::transfer_with_fee(ctx, amount)
-    }
 
     /// Convert accumulated fees to SOL via Meteora DEX
     pub fn convert_fees_to_sol(ctx: Context<ConvertFeesToSol>) -> Result<()> {
@@ -400,23 +348,16 @@ pub mod farm_game {
     //     instructions::meteora_admin::view_meteora_stats(ctx)
     // }
 
-    // ===== IMPROVED TRANSFER SYSTEM =====
+    // ===== TRANSFER SYSTEM =====
 
-    /// Transfer with improved fee system (FeePool accumulation)
-    pub fn transfer_with_improved_fee(
+    /// Transfer with fee system (FeePool accumulation)
+    pub fn transfer_with_fee(
         ctx: Context<TransferWithImprovedFee>, 
         amount: u64
     ) -> Result<()> {
         instructions::transfer_improved::transfer_with_improved_fee(ctx, amount)
     }
 
-    /// Legacy transfer for compatibility (direct Treasury)
-    pub fn transfer_with_legacy_fee(
-        ctx: Context<TransferWithLegacyFee>, 
-        amount: u64
-    ) -> Result<()> {
-        instructions::transfer_improved::transfer_with_legacy_fee(ctx, amount)
-    }
 
     /// Batch transfer with fee optimization
     pub fn batch_transfer_with_fee(

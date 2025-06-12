@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, MintTo, Transfer, Token, TokenAccount, Mint};
 use crate::state::*;
 use crate::error::*;
+use anchor_lang::solana_program::hash::hash;
 
 // ===== VALIDATION HELPERS =====
 // Delegate to validation module
@@ -201,8 +202,6 @@ pub fn initialize_farm_space_level_1(farm_space: &mut FarmSpace, owner: Pubkey) 
     farm_space.capacity = FarmSpace::get_capacity_for_level(1);
     farm_space.seed_count = 1; // Starting with 1 seed (Seed 1)
     farm_space.total_grow_power = SeedType::Seed1.get_grow_power(); // 100 Grow Power
-    farm_space.upgrade_start_time = 0;
-    farm_space.upgrade_target_level = 0;
     farm_space.reserve = [0; 32];
     Ok(())
 }
@@ -241,7 +240,8 @@ pub fn initialize_seed_storage(seed_storage: &mut SeedStorage, owner: Pubkey) {
     seed_storage.owner = owner;
     seed_storage.seed_ids = Vec::new();
     seed_storage.total_seeds = 0;
-    seed_storage.reserve = [0; 32];
+    seed_storage.seed_type_counts = [0; 9];
+    seed_storage.reserve = [0; 16];
 }
 
 /// Generate entropy request key for Pyth Entropy
@@ -281,14 +281,32 @@ pub fn validate_entropy_request_account(
     Ok(())
 }
 
-/// Add seed to user's storage
+/// Add seed to user's storage with type tracking and auto-discard
 pub fn add_seed_to_storage(
+    seed_storage: &mut SeedStorage,
+    seed_id: u64,
+    seed_type: SeedType,
+) -> Result<()> {
+    // Check if we can add this seed type (with auto-discard if needed)
+    if !seed_storage.can_add_seed_type(&seed_type) {
+        // Auto-discard if at limit for this type
+        seed_storage.auto_discard_excess(&seed_type)?;
+    }
+    
+    // Add the seed using the new storage API
+    seed_storage.add_seed(seed_id, &seed_type)?;
+    
+    Ok(())
+}
+
+/// Legacy add seed function for backward compatibility
+pub fn add_seed_to_storage_legacy(
     seed_storage: &mut SeedStorage,
     seed_id: u64,
 ) -> Result<()> {
     require!(
-        seed_storage.seed_ids.len() < 1_000, // Max 1,000 seeds per storage - affordable and practical
-        GameError::InvalidQuantity
+        seed_storage.seed_ids.len() < SeedStorage::MAX_TOTAL_SEEDS,
+        GameError::StorageFull
     );
     
     seed_storage.seed_ids.push(seed_id);
@@ -296,8 +314,27 @@ pub fn add_seed_to_storage(
     Ok(())
 }
 
-/// Remove seed from user's storage
+/// Remove seed from user's storage with type tracking
 pub fn remove_seed_from_storage(
+    seed_storage: &mut SeedStorage,
+    seed_id: u64,
+    seed_type: SeedType,
+) -> Result<bool> {
+    // Use the storage's built-in removal with type tracking
+    let removed = seed_storage.remove_seed(seed_id, &seed_type);
+    
+    if removed {
+        msg!("Seed {} (type: {:?}) removed from storage. New count: {}", 
+             seed_id, seed_type, seed_storage.total_seeds);
+    } else {
+        msg!("Seed {} not found in storage", seed_id);
+    }
+    
+    Ok(removed)
+}
+
+/// Legacy remove seed function for backward compatibility
+pub fn remove_seed_from_storage_legacy(
     seed_storage: &mut SeedStorage,
     seed_id: u64,
 ) -> Result<bool> {
@@ -313,4 +350,60 @@ pub fn remove_seed_from_storage(
         msg!("Seed {} not found in storage", seed_id);
         Ok(false)
     }
+}
+
+// ===== HASH-BASED INVITE CODE UTILITIES =====
+
+/// Generate a secure hash for invite codes
+/// Formula: SHA256(plaintext_code + salt + inviter_pubkey)
+pub fn generate_invite_code_hash(
+    plaintext_code: &[u8; 8],
+    salt: &[u8; 16],
+    inviter: &Pubkey
+) -> [u8; 32] {
+    let mut data = Vec::new();
+    data.extend_from_slice(plaintext_code);
+    data.extend_from_slice(salt);
+    data.extend_from_slice(inviter.as_ref());
+    
+    hash(&data).to_bytes()
+}
+
+/// Generate a cryptographically secure random salt
+/// Uses current clock timestamp and slot for randomness
+pub fn generate_random_salt() -> Result<[u8; 16]> {
+    let clock = Clock::get()?;
+    let seed_data = [
+        clock.unix_timestamp.to_le_bytes(),
+        clock.slot.to_le_bytes(),
+    ].concat();
+    
+    let hash_result = hash(&seed_data);
+    let mut salt = [0u8; 16];
+    salt.copy_from_slice(&hash_result.to_bytes()[0..16]);
+    Ok(salt)
+}
+
+/// Validate invite code format (8 alphanumeric characters)
+pub fn validate_invite_code_format(invite_code: &[u8; 8]) -> Result<()> {
+    for &byte in invite_code.iter() {
+        require!(
+            (byte >= b'0' && byte <= b'9') || 
+            (byte >= b'A' && byte <= b'Z') || 
+            (byte >= b'a' && byte <= b'z'),
+            GameError::InvalidInviteCode
+        );
+    }
+    Ok(())
+}
+
+/// Verify that a plaintext code matches the stored hash
+pub fn verify_invite_code_hash(
+    plaintext_code: &[u8; 8],
+    salt: &[u8; 16],
+    inviter: &Pubkey,
+    stored_hash: &[u8; 32]
+) -> bool {
+    let computed_hash = generate_invite_code_hash(plaintext_code, salt, inviter);
+    computed_hash == *stored_hash
 }

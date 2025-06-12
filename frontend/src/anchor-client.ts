@@ -650,7 +650,7 @@ export class AnchorClient {
     }
   }
 
-  // Upgrade farm space (start upgrade with 24h cooldown)
+  // Upgrade farm space (instant upgrade)
   async upgradeFarmSpace(): Promise<string> {
     try {
       logger.info('🔧 農場スペースをアップグレード中...');
@@ -671,7 +671,7 @@ export class AnchorClient {
         })
         .rpc();
 
-      logger.success(`農場スペースアップグレード開始成功! トランザクション: ${tx}`);
+      logger.success(`農場スペースアップグレード成功! トランザクション: ${tx}`);
       return tx;
     } catch (error) {
       logger.error(
@@ -681,32 +681,6 @@ export class AnchorClient {
     }
   }
 
-  // Complete farm space upgrade (after 24h cooldown)
-  async completeFarmSpaceUpgrade(): Promise<string> {
-    try {
-      logger.info('✅ 農場スペースアップグレードを完了中...');
-
-      const userPublicKey = this.provider.wallet.publicKey;
-      const pdas = await this.calculatePDAs(userPublicKey);
-
-      const tx = await this.program.methods
-        .completeFarmSpaceUpgrade()
-        .accounts({
-          userState: pdas.userState,
-          farmSpace: pdas.farmSpace,
-          user: userPublicKey,
-        })
-        .rpc();
-
-      logger.success(`農場スペースアップグレード完了成功! トランザクション: ${tx}`);
-      return tx;
-    } catch (error) {
-      logger.error(
-        `農場スペースアップグレード完了エラー: ${error instanceof Error ? error.message : String(error)}`
-      );
-      throw error;
-    }
-  }
 
   // Plant seed in farm space
   async plantSeed(seedId: number): Promise<string> {

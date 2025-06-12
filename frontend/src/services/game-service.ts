@@ -163,29 +163,13 @@ export class GameService {
     );
   }
 
-  // Farm space upgrade (start upgrade with 24h cooldown)
+  // Farm space upgrade (instant upgrade)
   async upgradeFarmSpace(callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
         return await executeTransaction(() => this.getAnchorClient().upgradeFarmSpace(), {
-          operationName: '農場スペースアップグレード開始',
-          successMessage: '農場スペースのアップグレードを開始しました！24時間後に完了できます',
-          onSuccess: callbacks.updateGameState,
-          ...callbacks,
-        });
-      },
-      callbacks.showError
-    );
-  }
-
-  // Complete farm space upgrade (after 24h cooldown)
-  async completeFarmSpaceUpgrade(callbacks: UICallbacks): Promise<string> {
-    return await requireWalletConnection(
-      this.solanaService.getWalletState(),
-      async () => {
-        return await executeTransaction(() => this.getAnchorClient().completeFarmSpaceUpgrade(), {
-          operationName: '農場スペースアップグレード完了',
+          operationName: '農場スペースアップグレード',
           successMessage: '農場スペースのアップグレードが完了しました！',
           onSuccess: callbacks.updateGameState,
           ...callbacks,
@@ -194,6 +178,7 @@ export class GameService {
       callbacks.showError
     );
   }
+
 
   // Plant seed in farm space
   async plantSeed(seedId: number, callbacks: UICallbacks): Promise<string> {

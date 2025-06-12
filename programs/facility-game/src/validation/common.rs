@@ -138,25 +138,9 @@ pub fn validate_seed_type(seed_type: &SeedType) -> Result<()> {
 
 // ===== UPGRADE VALIDATIONS =====
 
-/// Validate farm space can be upgraded
+/// Validate farm space can be upgraded (instant upgrade)
 pub fn validate_can_upgrade_farm_space(farm_space: &FarmSpace) -> Result<()> {
     require!(farm_space.level < 5, GameError::MaxLevelReached);
-    require!(farm_space.upgrade_start_time == 0, GameError::AlreadyUpgrading);
-    Ok(())
-}
-
-/// Validate upgrade is in progress
-pub fn validate_upgrade_in_progress(farm_space: &FarmSpace) -> Result<()> {
-    require!(farm_space.upgrade_start_time > 0, GameError::NoUpgradeInProgress);
-    Ok(())
-}
-
-/// Validate upgrade cooldown is complete
-pub fn validate_upgrade_cooldown_complete(farm_space: &FarmSpace, current_time: i64) -> Result<()> {
-    require!(
-        farm_space.is_upgrade_complete(current_time),
-        GameError::UpgradeStillInProgress
-    );
     Ok(())
 }
 
@@ -171,10 +155,10 @@ pub fn validate_invite_code_format(code: &[u8; 8]) -> Result<()> {
     Ok(())
 }
 
-/// Validate invite limit not exceeded
-pub fn validate_invite_limit(invite_code: &InviteCode) -> Result<()> {
+/// Validate invite limit not exceeded (for hash-based system)
+pub fn validate_secret_invite_limit(secret_invite_code: &InviteCode) -> Result<()> {
     require!(
-        invite_code.invites_used < invite_code.invite_limit,
+        secret_invite_code.invites_used < secret_invite_code.invite_limit,
         GameError::InviteCodeLimitReached
     );
     Ok(())
@@ -254,6 +238,12 @@ pub fn validate_global_grow_power(global_stats: &GlobalStats) -> Result<()> {
 /// Validate seed storage has capacity
 pub fn validate_seed_storage_capacity(seed_storage: &SeedStorage) -> Result<()> {
     require!(seed_storage.can_add_seed(), GameError::StorageFull);
+    Ok(())
+}
+
+/// Validate seed storage has capacity for specific seed type
+pub fn validate_seed_storage_capacity_for_type(seed_storage: &SeedStorage, seed_type: &SeedType) -> Result<()> {
+    require!(seed_storage.can_add_seed_with_type(seed_type), GameError::SeedTypeLimitReached);
     Ok(())
 }
 

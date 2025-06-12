@@ -170,10 +170,9 @@ pub fn buy_farm_space(ctx: Context<BuyFarmSpace>) -> Result<()> {
     Ok(())
 }
 
-/// Start farm space upgrade (24 hour cooldown)
+/// Upgrade farm space instantly (no cooldown)
 pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
     let user_token_account = &ctx.accounts.user_token_account;
-    let current_time = Clock::get()?.unix_timestamp;
     
     // Validate upgrade prerequisites
     validate_upgrade_prerequisites(&ctx.accounts.farm_space)?;
@@ -187,21 +186,26 @@ pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
     // Burn tokens for upgrade payment
     burn_upgrade_payment(&ctx, upgrade_cost)?;
     
-    // Start upgrade process
-    initiate_upgrade_process(&mut ctx.accounts.farm_space, current_time);
+    // Perform instant upgrade
+    let farm_space = &mut ctx.accounts.farm_space;
+    let old_level = farm_space.level;
+    let old_capacity = farm_space.capacity;
     
-    msg!("Farm space upgrade started for user: {}, from level {} to {}, cost: {} tokens, cooldown ends at: {}", 
+    farm_space.level += 1;
+    farm_space.capacity = FarmSpace::get_capacity_for_level(farm_space.level);
+    
+    msg!("Farm space upgraded instantly for user: {}, from level {} to {}, capacity increased from {} to {} seeds, cost: {} tokens", 
          ctx.accounts.user.key(), 
-         ctx.accounts.farm_space.level, 
-         ctx.accounts.farm_space.upgrade_target_level, 
-         upgrade_cost,
-         current_time + FarmSpace::UPGRADE_COOLDOWN);
+         old_level, 
+         farm_space.level,
+         old_capacity,
+         farm_space.capacity,
+         upgrade_cost);
     Ok(())
 }
 
 /// Validate that farm space can be upgraded
 fn validate_upgrade_prerequisites(farm_space: &FarmSpace) -> Result<()> {
-    require!(farm_space.upgrade_start_time == 0, GameError::AlreadyUpgrading);
     require!(farm_space.level < 5, GameError::MaxLevelReached);
     Ok(())
 }
@@ -219,66 +223,4 @@ fn burn_upgrade_payment(ctx: &Context<UpgradeFarmSpace>, upgrade_cost: u64) -> R
     token::burn(cpi_ctx, upgrade_cost)
 }
 
-/// Initialize the upgrade process with cooldown
-fn initiate_upgrade_process(farm_space: &mut FarmSpace, current_time: i64) {
-    farm_space.upgrade_start_time = current_time;
-    farm_space.upgrade_target_level = farm_space.level + 1;
-}
 
-/// Context for completing farm space upgrade
-#[derive(Accounts)]
-pub struct CompleteFarmSpaceUpgrade<'info> {
-    #[account(
-        mut,
-        seeds = [b"user", user.key().as_ref()],
-        bump,
-        constraint = user_state.has_farm_space @ GameError::NoFarmSpace
-    )]
-    pub user_state: Account<'info, UserState>,
-    
-    #[account(
-        mut,
-        seeds = [b"farm_space", user.key().as_ref()],
-        bump,
-        constraint = farm_space.owner == user.key()
-    )]
-    pub farm_space: Account<'info, FarmSpace>,
-    
-    #[account(mut)]
-    pub user: Signer<'info>,
-}
-
-/// Complete farm space upgrade after cooldown
-pub fn complete_farm_space_upgrade(ctx: Context<CompleteFarmSpaceUpgrade>) -> Result<()> {
-    let farm_space = &mut ctx.accounts.farm_space;
-    let current_time = Clock::get()?.unix_timestamp;
-    
-    // Check if upgrade is in progress
-    require!(
-        farm_space.upgrade_start_time > 0,
-        GameError::NoUpgradeInProgress
-    );
-    
-    // Check if cooldown is complete
-    require!(
-        farm_space.is_upgrade_complete(current_time),
-        GameError::UpgradeStillInProgress
-    );
-    
-    let old_level = farm_space.level;
-    let old_capacity = farm_space.capacity;
-    
-    // Complete the upgrade
-    farm_space.level = farm_space.upgrade_target_level;
-    farm_space.capacity = FarmSpace::get_capacity_for_level(farm_space.level);
-    farm_space.upgrade_start_time = 0;
-    farm_space.upgrade_target_level = 0;
-    
-    msg!("Farm space upgrade completed for user: {}, from level {} to {}, capacity increased from {} to {} seeds", 
-         ctx.accounts.user.key(), 
-         old_level, 
-         farm_space.level,
-         old_capacity,
-         farm_space.capacity);
-    Ok(())
-}

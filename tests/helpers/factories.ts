@@ -10,6 +10,31 @@ export class TestScenarioFactory {
   constructor(private testEnv: TestEnvironment) {}
 
   /**
+   * Create a basic user from existing keypair (for invite system tests)
+   */
+  async createBasicUserFromKeypair(keypair: anchor.web3.Keypair, userName: string): Promise<TestUser> {
+    const user = await createUser(this.testEnv, userName, keypair);
+    
+    // Buy farm space (user should already be initialized via invite system)
+    await this.testEnv.program.methods
+      .buyFarmSpace()
+      .accountsPartial({
+        userState: user.userStatePda,
+        config: this.testEnv.pdas.configPda,
+        farmSpace: user.farmSpacePda,
+        initialSeed: user.initialSeedPda,
+        globalStats: this.testEnv.pdas.globalStatsPda,
+        treasury: this.testEnv.pdas.treasuryPda,
+        user: user.keypair.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([user.keypair])
+      .rpc();
+
+    return user;
+  }
+
+  /**
    * Create a basic user scenario with initialized user and farm
    */
   async createBasicUserScenario(userName: string): Promise<TestUser> {

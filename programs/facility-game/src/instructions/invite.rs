@@ -1,20 +1,34 @@
 use anchor_lang::prelude::*;
 use crate::state::*;
 use crate::error::*;
-use solana_program::hash::{hash, Hash};
+use crate::utils::{
+    generate_invite_code_hash, 
+    generate_random_salt, 
+    validate_invite_code_format,
+    verify_invite_code_hash
+};
 
-/// Context for creating a secret invite code
+// ===== HASH-BASED SECRET INVITE SYSTEM =====
+// プライバシー保護のハッシュ招待システム - 招待コードは平文でチェーン上に保存されない
+// 招待される人のアドレスは不要 - オープンな招待方式
+
+/// ハッシュベース招待コード作成のコンテキスト
+/// 8バイト招待コードをSHA256ハッシュ化してプライバシー確保
 #[derive(Accounts)]
 #[instruction(invite_code: [u8; 8])]
-pub struct CreateSecretInviteCode<'info> {
+pub struct CreateInviteCode<'info> {
     #[account(
         init,
         payer = inviter,
-        space = SecretInviteCode::LEN,
-        seeds = [b"secret_invite_code", inviter.key().as_ref(), &Clock::get().unwrap().unix_timestamp.to_le_bytes()],
+        space = InviteCode::LEN,
+        seeds = [
+            b"invite", 
+            inviter.key().as_ref(),
+            &invite_code
+        ],
         bump
     )]
-    pub secret_invite_account: Account<'info, SecretInviteCode>,
+    pub invite_account: Account<'info, InviteCode>,
     
     #[account(
         seeds = [b"config"],
@@ -28,13 +42,19 @@ pub struct CreateSecretInviteCode<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Context for using a secret invite code during user initialization
+/// ハッシュベース招待コード使用のコンテキスト
+/// 平文コード + 招待者アドレスでハッシュ検証後にユーザー初期化
 #[derive(Accounts)]
 #[instruction(invite_code: [u8; 8], inviter_pubkey: Pubkey)]
-pub struct UseSecretInviteCode<'info> {
-    /// We find the secret invite account by scanning through inviter's codes
-    #[account(mut)]
-    pub secret_invite_account: Account<'info, SecretInviteCode>,
+pub struct UseInviteCode<'info> {
+    #[account(
+        mut,
+        seeds = [b"invite", inviter_pubkey.as_ref(), &invite_code],
+        bump,
+        constraint = invite_account.is_active @ GameError::InviteCodeInactive,
+        constraint = invite_account.invites_used < invite_account.invite_limit @ GameError::InviteCodeLimitReached
+    )]
+    pub invite_account: Account<'info, InviteCode>,
     
     #[account(
         init,
@@ -57,126 +77,97 @@ pub struct UseSecretInviteCode<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Context for expanding invite limit (admin only)
-#[derive(Accounts)]
-pub struct ExpandInviteLimit<'info> {
-    #[account(
-        mut,
-        seeds = [b"invite_code", invite_code_account.code.as_ref()],
-        bump
-    )]
-    pub invite_code_account: Account<'info, InviteCode>,
-    
-    #[account(
-        seeds = [b"config"],
-        bump,
-        constraint = config.admin == admin.key() @ GameError::Unauthorized
-    )]
-    pub config: Account<'info, Config>,
-    
-    #[account(mut)]
-    pub admin: Signer<'info>,
-}
+// ===== INSTRUCTION IMPLEMENTATIONS =====
 
-/// Create an invite code for a user
-pub fn create_invite_code(ctx: Context<CreateInviteCode>, invite_code: [u8; 8]) -> Result<()> {
-    let invite_code_account = &mut ctx.accounts.invite_code_account;
+/// ハッシュベース招待コードを作成 - プライバシー保護
+/// 平文コードは即座にハッシュ化され、チェーン上に保存されない
+/// オペレーターは無制限、一般ユーザーは設定された上限まで招待可能
+pub fn create_invite_code(
+    ctx: Context<CreateInviteCode>,
+    invite_code: [u8; 8]
+) -> Result<()> {
+    // Validate invite code format
+    validate_invite_code_format(&invite_code)?;
+    
+    let invite = &mut ctx.accounts.invite_account;
     let config = &ctx.accounts.config;
     
-    // Validate invite code format (8 alphanumeric characters)
-    for &byte in invite_code.iter() {
-        require!(
-            (byte >= b'0' && byte <= b'9') || 
-            (byte >= b'A' && byte <= b'Z') || 
-            (byte >= b'a' && byte <= b'z'),
-            GameError::InvalidInviteCode
-        );
-    }
-    
-    invite_code_account.inviter = ctx.accounts.inviter.key();
-    invite_code_account.invites_used = 0;
-    
-    // Set invite limit: unlimited (u8::MAX) for operator, normal limit for others
-    if ctx.accounts.inviter.key() == config.operator {
-        invite_code_account.invite_limit = u8::MAX;
+    // Determine invite limit
+    let invite_limit = if ctx.accounts.inviter.key() == config.operator {
+        u8::MAX // Operator has unlimited invites
     } else {
-        invite_code_account.invite_limit = config.max_invite_limit;
-    }
+        config.max_invite_limit
+    };
     
-    invite_code_account.code = invite_code;
-    invite_code_account.created_at = Clock::get()?.unix_timestamp;
-    invite_code_account.reserve = [0; 32];
+    // Generate hash
+    let salt = generate_random_salt()?;
+    let code_hash = generate_invite_code_hash(
+        &invite_code,
+        &salt,
+        &ctx.accounts.inviter.key()
+    );
     
-    msg!("Invite code created: {:?} for inviter: {}", 
-         core::str::from_utf8(&invite_code).unwrap_or("INVALID"), 
+    // Set secret invite account data
+    invite.inviter = ctx.accounts.inviter.key();
+    invite.code_hash = code_hash;
+    invite.salt = salt;
+    invite.invites_used = 0;
+    invite.invite_limit = invite_limit;
+    invite.code_index = 0; // Not used in simplified version
+    invite.created_at = Clock::get()?.unix_timestamp;
+    invite.is_active = true;
+    invite.reserve = [0; 15];
+    
+    msg!("Secret invite code created: Hash={:?}, Inviter={}", 
+         &code_hash[0..8], 
          ctx.accounts.inviter.key());
     
     Ok(())
 }
 
-/// Use an invite code to initialize a user with referrer
+/// ハッシュベース招待コードを使用してユーザー初期化
+/// 平文コード + 招待者アドレスでハッシュ検証を行い、紹介関係を確立
+/// 招待される人のアドレスは事前に不要（オープン招待）
 pub fn use_invite_code(
-    ctx: Context<UseInviteCode>, 
-    invite_code: [u8; 8]
+    ctx: Context<UseInviteCode>,
+    invite_code: [u8; 8],
+    inviter_pubkey: Pubkey
 ) -> Result<()> {
-    let invite_code_account = &mut ctx.accounts.invite_code_account;
-    let user_state = &mut ctx.accounts.user_state;
+    let invite = &mut ctx.accounts.invite_account;
     
-    // Verify invite code hasn't reached limit (skip check for operator)
-    let config = &ctx.accounts.config;
-    if invite_code_account.inviter != config.operator {
-        require!(
-            invite_code_account.invites_used < invite_code_account.invite_limit,
-            GameError::InviteCodeLimitReached
-        );
-    }
-    
-    // Verify the invite code matches
+    // Verify hash
     require!(
-        invite_code_account.code == invite_code,
+        verify_invite_code_hash(
+            &invite_code,
+            &invite.salt,
+            &inviter_pubkey,
+            &invite.code_hash
+        ),
         GameError::InvalidInviteCode
     );
     
-    // Verify inviter matches the account
+    // Verify inviter matches
     require!(
-        invite_code_account.inviter == ctx.accounts.inviter.key(),
+        invite.inviter == inviter_pubkey,
         GameError::InvalidInviter
     );
     
     // Initialize user state with referrer
+    let user_state = &mut ctx.accounts.user_state;
     user_state.owner = ctx.accounts.invitee.key();
     user_state.total_grow_power = 0;
     user_state.last_harvest_time = Clock::get()?.unix_timestamp;
     user_state.has_farm_space = false;
-    user_state.referrer = Some(invite_code_account.inviter);
+    user_state.referrer = Some(inviter_pubkey);
     user_state.pending_referral_rewards = 0;
     user_state.reserve = [0; 32];
     
-    // Increment invite usage
-    invite_code_account.invites_used += 1;
+    // Update usage count
+    invite.invites_used += 1;
     
-    msg!("User {} initialized with referrer: {} using invite code: {:?}", 
-         ctx.accounts.invitee.key(), 
-         invite_code_account.inviter,
-         core::str::from_utf8(&invite_code).unwrap_or("INVALID"));
-    
-    Ok(())
-}
-
-/// Expand invite limit for a specific invite code (admin only)
-pub fn expand_invite_limit(
-    ctx: Context<ExpandInviteLimit>, 
-    additional_invites: u8
-) -> Result<()> {
-    let invite_code_account = &mut ctx.accounts.invite_code_account;
-    
-    invite_code_account.invite_limit = invite_code_account.invite_limit
-        .checked_add(additional_invites)
-        .ok_or(GameError::CalculationOverflow)?;
-    
-    msg!("Invite limit expanded by {} for invite code owned by: {}", 
-         additional_invites, 
-         invite_code_account.inviter);
+    msg!("Secret invite code used: User={}, Inviter={}", 
+         ctx.accounts.invitee.key(),
+         inviter_pubkey);
     
     Ok(())
 }
