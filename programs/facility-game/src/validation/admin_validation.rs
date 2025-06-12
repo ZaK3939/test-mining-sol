@@ -134,7 +134,7 @@ mod tests {
             admin,
             treasury: Pubkey::new_unique(),
             base_rate: 100,
-            halving_interval: 518400, // 6 days
+            halving_interval: 604800, // 7 days
             next_halving_time: 0,
             seed_pack_cost: 300_000_000,
             seed_counter: 0,
@@ -144,6 +144,7 @@ mod tests {
             trading_fee_percentage: 2,
             protocol_referral_address: Pubkey::new_unique(),
             total_supply_minted: 0,
+            operator: Pubkey::new_unique(),
             reserve: [0; 2],
         };
         

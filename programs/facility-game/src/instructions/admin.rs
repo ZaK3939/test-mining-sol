@@ -92,6 +92,9 @@ pub fn initialize_config(
     // Initialize supply tracking
     config.total_supply_minted = 0;
     
+    // Set operator address (with unlimited invites)
+    config.operator = "43eUMnsf1QoFmE2ZkHxbXxZCAJht7pPpFFPUYicUYbjJ".parse::<Pubkey>().unwrap();
+    
     // Zero out reserved space
     config.reserve = [0; 2];
     
@@ -235,6 +238,68 @@ pub fn initialize_fee_pool(ctx: Context<InitializeFeePool>, treasury_address: Pu
     fee_pool.reserve = [0; 48];
     
     msg!("Trading fee pool initialized: treasury={}", treasury_address);
+    
+    Ok(())
+}
+
+/// Context for updating config settings
+#[derive(Accounts)]
+pub struct UpdateConfig<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ crate::error::GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+    
+    #[account(mut)]
+    pub admin: Signer<'info>,
+}
+
+/// Update configuration settings (admin only)
+pub fn update_config(
+    ctx: Context<UpdateConfig>,
+    new_operator: Option<Pubkey>,
+    new_base_rate: Option<u64>,
+    new_halving_interval: Option<i64>,
+    new_treasury: Option<Pubkey>,
+    new_max_invite_limit: Option<u8>,
+) -> Result<()> {
+    let config = &mut ctx.accounts.config;
+    
+    // Update operator if provided
+    if let Some(operator) = new_operator {
+        config.operator = operator;
+        msg!("Config updated: new operator={}", operator);
+    }
+    
+    // Update base rate if provided
+    if let Some(base_rate) = new_base_rate {
+        config.base_rate = base_rate;
+        msg!("Config updated: new base_rate={}", base_rate);
+    }
+    
+    // Update halving interval if provided
+    if let Some(halving_interval) = new_halving_interval {
+        config.halving_interval = halving_interval;
+        // Also update next halving time
+        let current_time = Clock::get()?.unix_timestamp;
+        config.next_halving_time = current_time + halving_interval;
+        msg!("Config updated: new halving_interval={}", halving_interval);
+    }
+    
+    // Update treasury if provided
+    if let Some(treasury) = new_treasury {
+        config.treasury = treasury;
+        msg!("Config updated: new treasury={}", treasury);
+    }
+    
+    // Update max invite limit if provided
+    if let Some(max_invite_limit) = new_max_invite_limit {
+        config.max_invite_limit = max_invite_limit;
+        msg!("Config updated: new max_invite_limit={}", max_invite_limit);
+    }
     
     Ok(())
 }

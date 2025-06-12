@@ -459,9 +459,11 @@ mod error_comprehensive_tests {
             farm_space_cost_sol: FARM_SPACE_COST_SOL,
             seed_pack_counter: 0,
             seed_counter: 0,
-            invite_code_counter: 0,
+            trading_fee_percentage: 2,
             max_invite_limit: MAX_INVITE_LIMIT,
-            reserve: [0; 48],
+            total_supply_minted: 0,
+            operator: Pubkey::new_unique(),
+            reserve: [0; 2],
         };
         
         // Test admin authority validation

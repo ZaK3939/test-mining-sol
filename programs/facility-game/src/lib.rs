@@ -1,5 +1,6 @@
 // Anchorフレームワークの基本的な型や機能をインポート
 // prelude::*は、よく使う型（Account, Signer, Program等）を一括でインポート
+#![allow(deprecated)] // Suppress Anchor framework's internal deprecation warnings
 use anchor_lang::prelude::*;
 
 // SPLトークンプログラムとの連携に必要な機能をインポート
@@ -13,14 +14,16 @@ declare_id!("FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B");
 // 核心モジュールの宣言
 // Rustのモジュールシステムを使って、コードを論理的に分割
 pub mod state;        // アカウントの構造体定義
+// pub mod state_meteora; // Meteora統合用の拡張構造体 - temporarily disabled
 pub mod instructions; // 各命令のコンテキスト（必要なアカウント）定義
 pub mod error;        // カスタムエラー定義
 pub mod utils;        // ヘルパー関数
 
 // 新しい機能モジュール（より良い分離のため）
-pub mod constants;    // ゲーム定数
-pub mod validation;   // バリデーション機能
-pub mod economics;    // 経済計算
+pub mod constants;      // ゲーム定数
+pub mod validation;     // バリデーション機能
+pub mod economics;      // 経済計算
+pub mod error_handling; // エラーハンドリング
 
 // テストモジュール（開発時のみ）
 #[cfg(test)]
@@ -89,6 +92,19 @@ pub mod farm_game {
     /// Initialize fee pool
     pub fn initialize_fee_pool(ctx: Context<InitializeFeePool>, treasury_address: Pubkey) -> Result<()> {
         instructions::admin::initialize_fee_pool(ctx, treasury_address)
+    }
+    
+    /// Update system configuration (admin only)
+    /// Allows admin to modify various system parameters including operator address
+    pub fn update_config(
+        ctx: Context<UpdateConfig>,
+        new_operator: Option<Pubkey>,
+        new_base_rate: Option<u64>,
+        new_halving_interval: Option<i64>,
+        new_treasury: Option<Pubkey>,
+        new_max_invite_limit: Option<u8>,
+    ) -> Result<()> {
+        instructions::admin::update_config(ctx, new_operator, new_base_rate, new_halving_interval, new_treasury, new_max_invite_limit)
     }
 
     // ===== USER MANAGEMENT INSTRUCTIONS =====
@@ -184,9 +200,42 @@ pub mod farm_game {
         instructions::rewards::distribute_referral_on_claim(ctx, base_reward)
     }
 
+    /// Complete referral distribution with Level 1 (10%) and Level 2 (5%) handling
+    /// Provides proper implementation for all referral scenarios including protocol addresses
+    /// Ensures correct reward percentages: 100%, 90%, or 85% for claimant depending on referral chain
+    pub fn distribute_complete_referral(ctx: Context<DistributeCompleteReferral>, base_reward: u64) -> Result<()> {
+        instructions::rewards::distribute_complete_referral(ctx, base_reward)
+    }
+
     /// Claim accumulated referral rewards
     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
         instructions::rewards::claim_referral_rewards(ctx)
+    }
+    
+    // ===== REFERRAL REWARD ACCUMULATION SYSTEM =====
+    
+    /// Accumulate referral reward to a referrer's pending balance
+    /// Called when someone claims rewards to add commission to their referrer
+    pub fn accumulate_referral_reward(
+        ctx: Context<AccumulateReferralReward>,
+        reward_amount: u64,
+        referral_level: u8,
+    ) -> Result<()> {
+        instructions::referral_rewards::accumulate_referral_reward(ctx, reward_amount, referral_level)
+    }
+    
+    /// View current pending referral rewards for a user
+    /// Allows users to check their accumulated referral commission
+    pub fn view_pending_referral_rewards(ctx: Context<ViewPendingReferralRewards>) -> Result<()> {
+        instructions::referral_rewards::view_pending_referral_rewards(ctx)
+    }
+    
+    /// Enhanced claim reward that includes both farming and referral rewards
+    /// This is the main claim function users should call to get all accumulated rewards
+    pub fn claim_reward_with_referral_rewards(
+        ctx: Context<ClaimRewardWithReferralRewards>
+    ) -> Result<()> {
+        instructions::referral_rewards::claim_reward_with_referral_rewards(ctx)
     }
 
     // ===== INVITE SYSTEM INSTRUCTIONS =====
@@ -267,6 +316,20 @@ pub mod farm_game {
         instructions::seeds::remove_seed(ctx, seed_id)
     }
 
+    /// Discard seed permanently from storage
+    /// Allows users to permanently delete unwanted seeds to free up storage space
+    /// and reclaim the rent from the seed account
+    pub fn discard_seed(ctx: Context<DiscardSeed>, seed_id: u64) -> Result<()> {
+        instructions::seeds::discard_seed(ctx, seed_id)
+    }
+
+    /// Batch discard multiple seeds permanently from storage
+    /// Efficiently delete up to 100 unwanted seeds in a single transaction
+    /// and reclaim all rent from the seed accounts
+    pub fn batch_discard_seeds(ctx: Context<BatchDiscardSeeds>, seed_ids: Vec<u64>) -> Result<()> {
+        instructions::seeds::batch_discard_seeds(ctx, seed_ids)
+    }
+
     // ===== TRADING SYSTEM INSTRUCTIONS =====
 
     /// Transfer tokens with 2% fee
@@ -288,4 +351,83 @@ pub mod farm_game {
     ) -> Result<()> {
         instructions::meteora::update_meteora_config(ctx, meteora_pool, pool_weed_vault, pool_sol_vault)
     }
+
+    // ===== ADVANCED METEORA INTEGRATION =====
+    // Temporarily disabled meteora_admin functions
+
+    // /// Initialize Meteora configuration system (admin only)
+    // pub fn initialize_meteora_config(ctx: Context<InitializeMeteoraConfig>) -> Result<()> {
+    //     instructions::meteora_admin::initialize_meteora_config(ctx)
+    // }
+
+    // /// Configure DLMM pool settings (admin only)
+    // pub fn configure_dlmm_pool(
+    //     ctx: Context<AdminConfigureDlmmPool>, 
+    //     pool_config: DlmmPoolConfig
+    // ) -> Result<()> {
+    //     instructions::meteora_admin::configure_dlmm_pool(ctx, pool_config)
+    // }
+
+    // /// Update conversion settings (admin only)
+    // pub fn update_conversion_settings(
+    //     ctx: Context<UpdateConversionSettings>,
+    //     settings: ConversionSettings,
+    // ) -> Result<()> {
+    //     instructions::meteora_admin::update_conversion_settings(ctx, settings)
+    // }
+
+    // /// Swap WEED to SOL via DLMM with advanced features
+    // pub fn swap_weed_to_sol_via_dlmm(
+    //     ctx: Context<SwapWeedToSolViaDlmm>,
+    //     min_sol_output: u64,
+    //     slippage_tolerance_bps: Option<u16>,
+    // ) -> Result<()> {
+    //     instructions::meteora_minimal::swap_weed_to_sol_via_dlmm(ctx, min_sol_output, slippage_tolerance_bps)
+    // }
+
+    // /// Emergency pause/resume for Meteora conversions (admin only)
+    // pub fn emergency_pause_toggle(ctx: Context<EmergencyControl>, pause: bool) -> Result<()> {
+    //     instructions::meteora_admin::emergency_pause_toggle(ctx, pause)
+    // }
+
+    // /// Monitor pool health status
+    // pub fn monitor_pool_health(ctx: Context<MonitorPoolHealth>) -> Result<()> {
+    //     instructions::meteora_admin::monitor_pool_health(ctx)
+    // }
+
+    // /// View comprehensive Meteora statistics
+    // pub fn view_meteora_stats(ctx: Context<ViewMeteoraStats>) -> Result<()> {
+    //     instructions::meteora_admin::view_meteora_stats(ctx)
+    // }
+
+    // ===== IMPROVED TRANSFER SYSTEM =====
+
+    /// Transfer with improved fee system (FeePool accumulation)
+    pub fn transfer_with_improved_fee(
+        ctx: Context<TransferWithImprovedFee>, 
+        amount: u64
+    ) -> Result<()> {
+        instructions::transfer_improved::transfer_with_improved_fee(ctx, amount)
+    }
+
+    /// Legacy transfer for compatibility (direct Treasury)
+    pub fn transfer_with_legacy_fee(
+        ctx: Context<TransferWithLegacyFee>, 
+        amount: u64
+    ) -> Result<()> {
+        instructions::transfer_improved::transfer_with_legacy_fee(ctx, amount)
+    }
+
+    /// Batch transfer with fee optimization
+    pub fn batch_transfer_with_fee(
+        ctx: Context<BatchTransferWithFee>,
+        transfers: Vec<instructions::transfer_improved::TransferInstruction>,
+    ) -> Result<()> {
+        instructions::transfer_improved::batch_transfer_with_fee(ctx, transfers)
+    }
+
+    // /// Check automatic conversion trigger
+    // pub fn check_auto_conversion_trigger(ctx: Context<SwapWeedToSolViaDlmm>) -> Result<bool> {
+    //     instructions::meteora_minimal::check_auto_conversion_trigger(ctx)
+    // }
 }

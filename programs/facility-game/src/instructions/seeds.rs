@@ -203,6 +203,64 @@ pub struct RemoveSeed<'info> {
     pub user: Signer<'info>,
 }
 
+/// Context for discarding seed from storage permanently
+#[derive(Accounts)]
+#[instruction(seed_id: u64)]
+pub struct DiscardSeed<'info> {
+    #[account(
+        mut,
+        seeds = [b"user", user.key().as_ref()],
+        bump
+    )]
+    pub user_state: Account<'info, UserState>,
+    
+    #[account(
+        mut,
+        seeds = [b"seed_storage", user.key().as_ref()],
+        bump,
+        constraint = seed_storage.owner == user.key()
+    )]
+    pub seed_storage: Account<'info, SeedStorage>,
+    
+    #[account(
+        mut,
+        seeds = [b"seed", user.key().as_ref(), seed_id.to_le_bytes().as_ref()],
+        bump,
+        constraint = seed.owner == user.key(),
+        constraint = !seed.is_planted @ GameError::SeedAlreadyPlanted
+    )]
+    pub seed: Account<'info, Seed>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for batch discarding multiple seeds
+#[derive(Accounts)]
+pub struct BatchDiscardSeeds<'info> {
+    #[account(
+        mut,
+        seeds = [b"user", user.key().as_ref()],
+        bump
+    )]
+    pub user_state: Account<'info, UserState>,
+    
+    #[account(
+        mut,
+        seeds = [b"seed_storage", user.key().as_ref()],
+        bump,
+        constraint = seed_storage.owner == user.key()
+    )]
+    pub seed_storage: Account<'info, SeedStorage>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
 /// Purchase mystery seed pack with Pyth Entropy integration
 pub fn purchase_seed_pack(ctx: Context<PurchaseSeedPack>, quantity: u8, user_entropy_seed: u64) -> Result<()> {
     // Validate inputs
@@ -497,6 +555,160 @@ pub fn remove_seed(ctx: Context<RemoveSeed>, seed_id: u64) -> Result<()> {
     
     msg!("Seed removed: ID {}, Grow Power: {}, Farm total: {}, User total: {}", 
          seed_id, seed_grow_power, ctx.accounts.farm_space.total_grow_power, ctx.accounts.user_state.total_grow_power);
+    
+    Ok(())
+}
+
+/// Discard seed permanently from storage
+/// This allows users to free up storage space by permanently deleting unwanted seeds
+pub fn discard_seed(ctx: Context<DiscardSeed>, seed_id: u64) -> Result<()> {
+    let seed = &ctx.accounts.seed;
+    let seed_storage = &mut ctx.accounts.seed_storage;
+    
+    // Validate that seed is not planted
+    require!(!seed.is_planted, GameError::SeedAlreadyPlanted);
+    require!(seed.owner == ctx.accounts.user.key(), GameError::NotSeedOwner);
+    
+    // Remove seed ID from storage
+    let removed = remove_seed_from_storage(seed_storage, seed_id)?;
+    require!(removed, GameError::SeedNotFound);
+    
+    // Close the seed account to reclaim rent
+    // The seed account lamports will be transferred back to the user
+    let seed_account_info = ctx.accounts.seed.to_account_info();
+    let user_account_info = ctx.accounts.user.to_account_info();
+    
+    // Calculate lamports to transfer (seed account rent)
+    let seed_lamports = seed_account_info.lamports();
+    
+    // Transfer lamports from seed account to user
+    **seed_account_info.try_borrow_mut_lamports()? = 0;
+    **user_account_info.try_borrow_mut_lamports()? = user_account_info
+        .lamports()
+        .checked_add(seed_lamports)
+        .ok_or(GameError::CalculationOverflow)?;
+    
+    // Zero out the seed account data
+    let mut seed_data = seed_account_info.try_borrow_mut_data()?;
+    seed_data.fill(0);
+    
+    msg!("Seed discarded permanently: ID {}, Type: {:?}, Grow Power: {}, Storage count: {}", 
+         seed_id, seed.seed_type, seed.grow_power, seed_storage.total_seeds);
+    
+    Ok(())
+}
+
+/// Batch discard multiple seeds permanently from storage
+/// Allows users to efficiently delete multiple unwanted seeds in a single transaction
+pub fn batch_discard_seeds(ctx: Context<BatchDiscardSeeds>, seed_ids: Vec<u64>) -> Result<()> {
+    // Validate batch size
+    require!(seed_ids.len() <= 100, GameError::TooManyTransfers);
+    require!(!seed_ids.is_empty(), GameError::InvalidQuantity);
+    
+    let user_key = ctx.accounts.user.key();
+    let seed_storage = &mut ctx.accounts.seed_storage;
+    
+    let mut total_rent_recovered = 0u64;
+    let mut successful_discards = 0u32;
+    
+    // Process each seed ID
+    for &seed_id in &seed_ids {
+        // Derive the seed account PDA
+        let (seed_pda, _) = Pubkey::find_program_address(
+            &[
+                b"seed",
+                user_key.as_ref(),
+                &seed_id.to_le_bytes(),
+            ],
+            ctx.program_id,
+        );
+        
+        // Check if the seed account exists and get its info
+        let seed_account_info = match ctx.remaining_accounts.iter().find(|acc| acc.key() == seed_pda) {
+            Some(acc) => acc,
+            None => {
+                msg!("Seed {} not found in remaining accounts, skipping", seed_id);
+                continue;
+            }
+        };
+        
+        // Verify the account is owned by this program
+        if seed_account_info.owner != ctx.program_id {
+            msg!("Seed {} not owned by program, skipping", seed_id);
+            continue;
+        }
+        
+        // Try to deserialize and validate the seed
+        let seed_data = seed_account_info.try_borrow_data()?;
+        if seed_data.len() < 8 {
+            msg!("Seed {} has invalid data length, skipping", seed_id);
+            continue;
+        }
+        
+        // Parse the seed account data to check if planted
+        // We'll do a simple check by looking at the is_planted field
+        // Assuming the layout: discriminator(8) + owner(32) + seed_type(1) + grow_power(8) + is_planted(1)...
+        if seed_data.len() < 50 {
+            msg!("Seed {} data too short, skipping", seed_id);
+            continue;
+        }
+        
+        // Check if seed is planted (byte at position 49)
+        let is_planted = seed_data[49] != 0;
+        if is_planted {
+            msg!("Seed {} is planted, cannot discard, skipping", seed_id);
+            continue;
+        }
+        
+        // Check owner (bytes 8-40)
+        let owner_bytes = &seed_data[8..40];
+        let seed_owner = Pubkey::try_from(owner_bytes).unwrap_or_default();
+        if seed_owner != user_key {
+            msg!("Seed {} not owned by user, skipping", seed_id);
+            continue;
+        }
+        
+        drop(seed_data); // Release borrow before modification
+        
+        // Remove from storage
+        if remove_seed_from_storage(seed_storage, seed_id)? {
+            // Calculate rent to recover
+            let seed_lamports = seed_account_info.lamports();
+            total_rent_recovered = total_rent_recovered
+                .checked_add(seed_lamports)
+                .ok_or(GameError::CalculationOverflow)?;
+            
+            // Close the seed account
+            **seed_account_info.try_borrow_mut_lamports()? = 0;
+            
+            // Zero out the account data
+            let mut seed_data_mut = seed_account_info.try_borrow_mut_data()?;
+            seed_data_mut.fill(0);
+            
+            successful_discards += 1;
+            msg!("Seed {} discarded successfully", seed_id);
+        } else {
+            msg!("Seed {} not found in storage, skipping", seed_id);
+        }
+    }
+    
+    // Transfer recovered rent to user
+    if total_rent_recovered > 0 {
+        **ctx.accounts.user.to_account_info().try_borrow_mut_lamports()? = ctx
+            .accounts
+            .user
+            .to_account_info()
+            .lamports()
+            .checked_add(total_rent_recovered)
+            .ok_or(GameError::CalculationOverflow)?;
+    }
+    
+    msg!(
+        "Batch discard completed: {} seeds discarded, {} rent recovered, storage count: {}",
+        successful_discards,
+        total_rent_recovered,
+        seed_storage.total_seeds
+    );
     
     Ok(())
 }

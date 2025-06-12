@@ -43,6 +43,8 @@ mod admin_tests {
             max_invite_limit: 0,
             trading_fee_percentage: 0,
             protocol_referral_address: Pubkey::default(),
+            total_supply_minted: 0,
+            operator: Pubkey::new_unique(),
             reserve: [0; 2],
         };
 
@@ -97,6 +99,8 @@ mod admin_tests {
             max_invite_limit: 0,
             trading_fee_percentage: 0,
             protocol_referral_address: Pubkey::default(),
+            total_supply_minted: 0,
+            operator: Pubkey::new_unique(),
             reserve: [0; 2],
         };
 
@@ -145,6 +149,8 @@ mod admin_tests {
             max_invite_limit: 5,
             trading_fee_percentage: 2,
             protocol_referral_address: Pubkey::new_unique(),
+            total_supply_minted: 0,
+            operator: Pubkey::new_unique(),
             reserve: [0; 2],
         };
 
@@ -268,6 +274,8 @@ mod admin_tests {
             max_invite_limit: 5,
             trading_fee_percentage: 2,
             protocol_referral_address: protocol_referral_key,
+            total_supply_minted: 0,
+            operator: Pubkey::new_unique(),
             reserve: [0; 2],
         };
 
@@ -435,6 +443,8 @@ mod admin_tests {
             max_invite_limit: 5,
             trading_fee_percentage: 2,
             protocol_referral_address: Pubkey::new_unique(),
+            total_supply_minted: 0,
+            operator: Pubkey::new_unique(),
             reserve: [0; 2],
         };
         

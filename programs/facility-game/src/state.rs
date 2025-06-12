@@ -6,7 +6,7 @@ use anchor_lang::prelude::*;
 pub struct Config {
     /// Base reward rate in tokens per second (default: 100 WEED/sec)
     pub base_rate: u64,
-    /// Halving mechanism interval in seconds (default: 6 days)
+    /// Halving mechanism interval in seconds (default: 7 days)
     pub halving_interval: i64,
     /// Next scheduled halving timestamp
     pub next_halving_time: i64,
@@ -30,6 +30,8 @@ pub struct Config {
     pub protocol_referral_address: Pubkey,
     /// Total amount of WEED tokens minted so far
     pub total_supply_minted: u64,
+    /// Operator address with unlimited invite privileges
+    pub operator: Pubkey,
     /// Reserved bytes for future upgrades (reduced from 2 to accommodate total_supply_minted)
     pub reserve: [u8; 2],
 }
@@ -91,6 +93,7 @@ impl Config {
         1 + // trading_fee_percentage
         32 + // protocol_referral_address
         8 + // total_supply_minted
+        32 + // operator
         2; // reserve (kept for backward compatibility)
         
     /// Default farm space cost (0.5 SOL in lamports)
@@ -99,8 +102,8 @@ impl Config {
     /// Default base rate (100 WEED per second)
     pub const DEFAULT_BASE_RATE: u64 = 100;
     
-    /// Default halving interval (6 days in seconds)
-    pub const DEFAULT_HALVING_INTERVAL: i64 = 6 * 24 * 60 * 60;
+    /// Default halving interval (7 days in seconds)
+    pub const DEFAULT_HALVING_INTERVAL: i64 = 7 * 24 * 60 * 60;
 }
 
 impl UserState {
@@ -292,21 +295,52 @@ impl SeedPack {
         16; // reserve
 }
 
-/// Invite code management PDA
+/// Secret invite code management PDA (Hash-based for privacy)
 #[account]
-pub struct InviteCode {
+pub struct SecretInviteCode {
     /// Invite code creator (user who can invite others)
     pub inviter: Pubkey,
     /// Current number of people invited
     pub invites_used: u8,
     /// Maximum invite limit for this user
     pub invite_limit: u8,
-    /// Invite code string (8 characters)
-    pub code: [u8; 8],
+    /// Hash of the invite code (SHA256(code + salt))
+    pub code_hash: [u8; 32],
+    /// Random salt for hash security
+    pub salt: [u8; 16],
     /// Creation timestamp
     pub created_at: i64,
     /// Reserved for future expansion
-    pub reserve: [u8; 32],
+    pub reserve: [u8; 16],
+}
+
+impl SecretInviteCode {
+    pub const LEN: usize = 8 + 32 + 1 + 1 + 32 + 16 + 8 + 16;
+}
+
+/// Single-use secret invite code PDA (Operator-only, hash-based)
+#[account]
+pub struct SingleUseSecretInvite {
+    /// Creator (operator only)
+    pub creator: Pubkey,
+    /// Hash of the invite code (SHA256(code + salt))
+    pub code_hash: [u8; 32],
+    /// Random salt for hash security
+    pub salt: [u8; 16],
+    /// Whether this code has been used
+    pub is_used: bool,
+    /// User who used this code
+    pub used_by: Option<Pubkey>,
+    /// Creation timestamp
+    pub created_at: i64,
+    /// Usage timestamp
+    pub used_at: Option<i64>,
+    /// Reserved for future expansion
+    pub reserve: [u8; 16],
+}
+
+impl SingleUseSecretInvite {
+    pub const LEN: usize = 8 + 32 + 32 + 16 + 1 + 1 + 32 + 8 + 1 + 8 + 16;
 }
 
 /// Global statistics PDA
@@ -348,14 +382,17 @@ pub struct SeedStorage {
     /// Dynamic array of seed IDs (max 100 for rent optimization)
     pub seed_ids: Vec<u64>,
     /// Current seed count for quick access
-    pub total_seeds: u16,
+    pub total_seeds: u32,  // Changed from u16 to support >65,535 seeds
     /// Reserved bytes for future features
     pub reserve: [u8; 32],
 }
 
 impl SeedStorage {
-    /// Maximum seeds per user to prevent excessive rent costs
-    pub const MAX_SEEDS: usize = 100;
+    /// Maximum seeds per user - practical capacity
+    /// 1,000 seeds = 200 mystery packs worth of seeds
+    /// Rent cost is very affordable: ~0.06 SOL for the entire account
+    /// This is sufficient for most users while keeping costs minimal
+    pub const MAX_SEEDS: usize = 1_000;
     
     /// Check if storage has capacity for more seeds
     pub fn can_add_seed(&self) -> bool {
@@ -366,7 +403,7 @@ impl SeedStorage {
     pub fn add_seed(&mut self, seed_id: u64) -> Result<()> {
         require!(self.can_add_seed(), crate::error::GameError::StorageFull);
         self.seed_ids.push(seed_id);
-        self.total_seeds = self.seed_ids.len() as u16;
+        self.total_seeds = self.seed_ids.len() as u32;
         Ok(())
     }
     
@@ -374,7 +411,7 @@ impl SeedStorage {
     pub fn remove_seed(&mut self, seed_id: u64) -> bool {
         if let Some(pos) = self.seed_ids.iter().position(|&x| x == seed_id) {
             self.seed_ids.remove(pos);
-            self.total_seeds = self.seed_ids.len() as u16;
+            self.total_seeds = self.seed_ids.len() as u32;
             true
         } else {
             false
@@ -432,9 +469,10 @@ impl FeePool {
 impl SeedStorage {
     pub const LEN: usize = 8 + // discriminator
         32 + // owner
-        4 + (8 * 100) + // seed_ids (Vec<u64> with max 100 seeds)
-        2 + // total_seeds
+        4 + (8 * 1_000) + // seed_ids (Vec<u64> with max 1,000 seeds)
+        2 + // total_seeds (u16 is sufficient for 1,000)
         32; // reserve
+        // Total: 8,078 bytes (~8KB) - Very affordable, rent ~0.06 SOL
 }
 
 impl RewardAccount {

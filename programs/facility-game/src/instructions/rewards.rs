@@ -112,6 +112,78 @@ pub struct DistributeReferralOnClaim<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+/// Context for complete referral distribution including Level 2
+#[derive(Accounts)]
+pub struct DistributeCompleteReferral<'info> {
+    /// The user claiming rewards (Level 0)
+    #[account(
+        mut,
+        seeds = [b"user", claimant.key().as_ref()],
+        bump
+    )]
+    pub claimant_state: Account<'info, UserState>,
+    
+    /// Level 1 referrer state (direct referrer)
+    #[account(
+        mut,
+        seeds = [b"user", level1_referrer.key().as_ref()],
+        bump
+    )]
+    pub level1_referrer_state: Account<'info, UserState>,
+    
+    /// Level 2 referrer state (referrer's referrer) - optional
+    #[account(
+        mut,
+        seeds = [b"user", level2_referrer.key().as_ref()],
+        bump
+    )]
+    pub level2_referrer_state: Option<Account<'info, UserState>>,
+    
+    /// Level 1 referrer token account
+    #[account(
+        mut,
+        constraint = level1_token_account.owner == level1_referrer.key(),
+        constraint = level1_token_account.mint == reward_mint.key()
+    )]
+    pub level1_token_account: Account<'info, TokenAccount>,
+    
+    /// Level 2 referrer token account - optional
+    #[account(mut)]
+    pub level2_token_account: Option<Account<'info, TokenAccount>>,
+    
+    #[account(
+        mut,
+        seeds = [b"reward_mint"],
+        bump
+    )]
+    pub reward_mint: Account<'info, Mint>,
+    
+    #[account(
+        seeds = [b"mint_authority"],
+        bump
+    )]
+    /// CHECK: mint authority PDA
+    pub mint_authority: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+    
+    #[account(mut)]
+    pub claimant: Signer<'info>,
+    
+    /// CHECK: Level 1 referrer address (validated via claimant_state.referrer)
+    pub level1_referrer: UncheckedAccount<'info>,
+    
+    /// CHECK: Level 2 referrer address (validated via level1_referrer_state.referrer)
+    pub level2_referrer: UncheckedAccount<'info>,
+    
+    pub token_program: Program<'info, Token>,
+}
+
 /// Context for distributing referral rewards (legacy - kept for compatibility)
 #[derive(Accounts)]
 pub struct DistributeReferralReward<'info> {
@@ -245,7 +317,7 @@ fn update_halving_if_needed(
     global_stats: &mut GlobalStats,
     current_time: i64,
 ) -> Result<()> {
-    let (halving_occurred, new_rate, new_halving_time) = check_and_apply_halving(
+    let (halving_occurred, new_rate, new_halving_time) = crate::utils::check_and_apply_halving(
         current_time,
         config.next_halving_time,
         config.base_rate,
@@ -306,34 +378,43 @@ fn execute_reward_distribution(ctx: &mut Context<ClaimReward>, user_reward: u64)
 }
 
 /// Process referral reward distribution
-/// Handles Level 1 (10%) and Level 2 (5%) referral rewards
-/// Skips protocol addresses to avoid unnecessary rewards
-/// Uses pending_referral_rewards system for simplicity
+/// Handles Level 1 (10%) and Level 2 (5%) referral rewards with proper protocol address handling
+/// Protocol addresses receive their own rewards (100%) instead of distributing to referrers
 fn process_referral_rewards(ctx: &Context<ClaimReward>, base_reward: u64) -> Result<()> {
+    // Check if the user is the protocol address
+    if ctx.accounts.user.key() == ctx.accounts.config.protocol_referral_address {
+        // Protocol address keeps 100% of rewards - no distribution needed
+        msg!("🏢 Protocol address claimed: {} WEED (100% retention)", base_reward);
+        return Ok(());
+    }
+    
     if let Some(level1_referrer_key) = ctx.accounts.user_state.referrer {
-        let (level1_reward, level2_reward) = calculate_referral_rewards(base_reward)?;
+        let (level1_reward, level2_reward) = crate::utils::calculate_referral_rewards(base_reward)?;
         
         // Level 1 referral reward (10%)
-        if level1_reward > 0 && level1_referrer_key != ctx.accounts.config.protocol_referral_address {
-            msg!("💰 Level 1 referral (10%): {} WEED pending for {}", 
-                 level1_reward, level1_referrer_key);
-            
-            // Note: In a complete implementation, we would:
-            // 1. Update Level 1 referrer's pending_referral_rewards
-            // 2. Allow them to claim via claim_referral_rewards instruction
-            // For now, we log the reward for verification
+        if level1_reward > 0 {
+            if level1_referrer_key == ctx.accounts.config.protocol_referral_address {
+                // Level 1 is protocol address - it keeps the referral reward
+                msg!("🏢 Level 1 protocol address receives: {} WEED (10%)", level1_reward);
+                // Protocol address should get this reward added to their balance
+                // This would be handled by a separate instruction call
+            } else {
+                // Regular Level 1 referrer gets 10%
+                msg!("💰 Level 1 referral (10%): {} WEED pending for {}", 
+                     level1_reward, level1_referrer_key);
+                // This should be added to level1_referrer's pending_referral_rewards
+            }
         }
         
-        // Level 2 referral reward (5%)
+        // Level 2 referral reward (5%) - requires Level 1 referrer's referrer
         if level2_reward > 0 {
-            msg!("💰 Level 2 referral (5%): {} WEED available for distribution", 
-                 level2_reward);
-            
-            // Note: Level 2 implementation would require:
-            // 1. Loading Level 1 referrer's UserState to get their referrer
-            // 2. Checking if Level 2 referrer != protocol_referral_address
-            // 3. Adding to Level 2 referrer's pending_referral_rewards
+            msg!("💰 Level 2 referral (5%): {} WEED available for distribution", level2_reward);
+            // Level 2 implementation requires loading Level 1 referrer's UserState
+            // to get their referrer and process the 5% reward
         }
+    } else {
+        // No referrer - user gets 100% of their reward (already minted above)
+        msg!("🎯 No referrer: {} WEED (100% retention)", base_reward);
     }
     
     Ok(())
@@ -371,7 +452,7 @@ pub fn distribute_referral_on_claim(
         GameError::InvalidReferrer
     );
     
-    let (level1_reward, level2_reward) = calculate_referral_rewards(base_reward)?;
+    let (level1_reward, level2_reward) = crate::utils::calculate_referral_rewards(base_reward)?;
     
     // Distribute Level 1 referral reward (10%) immediately
     if level1_reward > 0 && 
@@ -415,6 +496,114 @@ pub fn distribute_referral_on_claim(
         }
     }
     
+    Ok(())
+}
+
+/// Complete referral distribution with Level 1 (10%) and Level 2 (5%) handling
+/// This instruction provides the proper implementation for all referral scenarios
+pub fn distribute_complete_referral(
+    ctx: Context<DistributeCompleteReferral>, 
+    base_reward: u64
+) -> Result<()> {
+    // Validate Level 1 referrer relationship
+    require!(
+        ctx.accounts.claimant_state.referrer == Some(ctx.accounts.level1_referrer.key()),
+        GameError::InvalidReferrer
+    );
+    
+    let protocol_address = ctx.accounts.config.protocol_referral_address;
+    let (level1_reward, level2_reward) = crate::utils::calculate_referral_rewards(base_reward)?;
+    
+    // === SCENARIO ANALYSIS ===
+    // 1. No referrer: User gets 100% (already handled in claim_reward)
+    // 2. Level 1 = Protocol: Protocol gets 100% + 10% = 110% total
+    // 3. Level 1 = Regular, Level 2 = None: User 100%, Level 1 gets 10% = 110% total
+    // 4. Level 1 = Regular, Level 2 = Protocol: User 100%, Level 1 gets 10%, Protocol gets 5% = 115% total
+    // 5. Level 1 = Regular, Level 2 = Regular: User 100%, Level 1 gets 10%, Level 2 gets 5% = 115% total
+    
+    let mut total_distributed = base_reward; // User already got 100%
+    
+    // Process Level 1 referral (10%)
+    if level1_reward > 0 {
+        if ctx.accounts.level1_referrer.key() == protocol_address {
+            // Level 1 is protocol address - mint directly to protocol
+            mint_tokens_to_user(
+                &ctx.accounts.reward_mint,
+                &ctx.accounts.level1_token_account,
+                &ctx.accounts.mint_authority,
+                &ctx.accounts.token_program,
+                ctx.bumps.mint_authority,
+                level1_reward,
+            )?;
+            
+            total_distributed += level1_reward;
+            msg!("🏢 Protocol Level 1: {} WEED (10%)", level1_reward);
+        } else {
+            // Regular Level 1 referrer
+            mint_tokens_to_user(
+                &ctx.accounts.reward_mint,
+                &ctx.accounts.level1_token_account,
+                &ctx.accounts.mint_authority,
+                &ctx.accounts.token_program,
+                ctx.bumps.mint_authority,
+                level1_reward,
+            )?;
+            
+            total_distributed += level1_reward;
+            msg!("💰 Level 1 referrer: {} WEED (10%)", level1_reward);
+        }
+    }
+    
+    // Process Level 2 referral (5%) if Level 1 referrer has a referrer
+    if level2_reward > 0 {
+        if let Some(level2_referrer_key) = ctx.accounts.level1_referrer_state.referrer {
+            // Validate that Level 2 referrer key matches the provided account
+            require!(
+                level2_referrer_key == ctx.accounts.level2_referrer.key(),
+                GameError::InvalidReferrer
+            );
+            
+            if let (Some(_level2_state), Some(level2_token_account)) = (
+                &ctx.accounts.level2_referrer_state,
+                &ctx.accounts.level2_token_account,
+            ) {
+                if level2_referrer_key == protocol_address {
+                    // Level 2 is protocol address
+                    mint_tokens_to_user(
+                        &ctx.accounts.reward_mint,
+                        level2_token_account,
+                        &ctx.accounts.mint_authority,
+                        &ctx.accounts.token_program,
+                        ctx.bumps.mint_authority,
+                        level2_reward,
+                    )?;
+                    
+                    total_distributed += level2_reward;
+                    msg!("🏢 Protocol Level 2: {} WEED (5%)", level2_reward);
+                } else {
+                    // Regular Level 2 referrer
+                    mint_tokens_to_user(
+                        &ctx.accounts.reward_mint,
+                        level2_token_account,
+                        &ctx.accounts.mint_authority,
+                        &ctx.accounts.token_program,
+                        ctx.bumps.mint_authority,
+                        level2_reward,
+                    )?;
+                    
+                    total_distributed += level2_reward;
+                    msg!("💰 Level 2 referrer: {} WEED (5%)", level2_reward);
+                }
+            }
+        }
+    }
+    
+    // Update total supply minted
+    ctx.accounts.config.total_supply_minted = ctx.accounts.config.total_supply_minted
+        .checked_add(level1_reward + level2_reward)
+        .ok_or(GameError::CalculationOverflow)?;
+    
+    msg!("🎯 Complete referral distribution: {} WEED total distributed", total_distributed);
     Ok(())
 }
 

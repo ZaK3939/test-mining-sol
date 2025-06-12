@@ -109,4 +109,34 @@ pub enum GameError {
     
     #[msg("Total supply cap exceeded - cannot mint more tokens")]
     SupplyCapExceeded,
+    
+    #[msg("Too many transfers in batch operation")]
+    TooManyTransfers,
+    
+    #[msg("Invalid entropy value")]
+    InvalidEntropyValue,
+    
+    #[msg("Low entropy quality")]
+    LowEntropyQuality,
+    
+    #[msg("Invalid seed pack quantity")]
+    InvalidSeedPackQuantity,
+    
+    #[msg("Cannot discard planted seed")]
+    CannotDiscardPlantedSeed,
+    
+    #[msg("Invalid referral level - must be 1 or 2")]
+    InvalidReferralLevel,
+    
+    #[msg("Insufficient liquidity in the pool")]
+    InsufficientLiquidity,
+    
+    #[msg("Insufficient fees for operation")]
+    InsufficientFees,
+    
+    #[msg("Invalid amount specified")]
+    InvalidAmount,
+    
+    #[msg("Slippage tolerance exceeded")]
+    SlippageToleranceExceeded,
 }

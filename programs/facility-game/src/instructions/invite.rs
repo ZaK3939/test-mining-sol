@@ -1,19 +1,20 @@
 use anchor_lang::prelude::*;
 use crate::state::*;
 use crate::error::*;
+use solana_program::hash::{hash, Hash};
 
-/// Context for creating an invite code
+/// Context for creating a secret invite code
 #[derive(Accounts)]
 #[instruction(invite_code: [u8; 8])]
-pub struct CreateInviteCode<'info> {
+pub struct CreateSecretInviteCode<'info> {
     #[account(
         init,
         payer = inviter,
-        space = InviteCode::LEN,
-        seeds = [b"invite_code", invite_code.as_ref()],
+        space = SecretInviteCode::LEN,
+        seeds = [b"secret_invite_code", inviter.key().as_ref(), &Clock::get().unwrap().unix_timestamp.to_le_bytes()],
         bump
     )]
-    pub invite_code_account: Account<'info, InviteCode>,
+    pub secret_invite_account: Account<'info, SecretInviteCode>,
     
     #[account(
         seeds = [b"config"],
@@ -27,16 +28,13 @@ pub struct CreateInviteCode<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Context for using an invite code during user initialization
+/// Context for using a secret invite code during user initialization
 #[derive(Accounts)]
-#[instruction(invite_code: [u8; 8])]
-pub struct UseInviteCode<'info> {
-    #[account(
-        mut,
-        seeds = [b"invite_code", invite_code.as_ref()],
-        bump
-    )]
-    pub invite_code_account: Account<'info, InviteCode>,
+#[instruction(invite_code: [u8; 8], inviter_pubkey: Pubkey)]
+pub struct UseSecretInviteCode<'info> {
+    /// We find the secret invite account by scanning through inviter's codes
+    #[account(mut)]
+    pub secret_invite_account: Account<'info, SecretInviteCode>,
     
     #[account(
         init,
@@ -55,9 +53,6 @@ pub struct UseInviteCode<'info> {
     
     #[account(mut)]
     pub invitee: Signer<'info>,
-    
-    /// CHECK: Inviter address (does not need to sign)
-    pub inviter: UncheckedAccount<'info>,
     
     pub system_program: Program<'info, System>,
 }
@@ -100,7 +95,14 @@ pub fn create_invite_code(ctx: Context<CreateInviteCode>, invite_code: [u8; 8]) 
     
     invite_code_account.inviter = ctx.accounts.inviter.key();
     invite_code_account.invites_used = 0;
-    invite_code_account.invite_limit = config.max_invite_limit;
+    
+    // Set invite limit: unlimited (u8::MAX) for operator, normal limit for others
+    if ctx.accounts.inviter.key() == config.operator {
+        invite_code_account.invite_limit = u8::MAX;
+    } else {
+        invite_code_account.invite_limit = config.max_invite_limit;
+    }
+    
     invite_code_account.code = invite_code;
     invite_code_account.created_at = Clock::get()?.unix_timestamp;
     invite_code_account.reserve = [0; 32];
@@ -120,11 +122,14 @@ pub fn use_invite_code(
     let invite_code_account = &mut ctx.accounts.invite_code_account;
     let user_state = &mut ctx.accounts.user_state;
     
-    // Verify invite code hasn't reached limit
-    require!(
-        invite_code_account.invites_used < invite_code_account.invite_limit,
-        GameError::InviteCodeLimitReached
-    );
+    // Verify invite code hasn't reached limit (skip check for operator)
+    let config = &ctx.accounts.config;
+    if invite_code_account.inviter != config.operator {
+        require!(
+            invite_code_account.invites_used < invite_code_account.invite_limit,
+            GameError::InviteCodeLimitReached
+        );
+    }
     
     // Verify the invite code matches
     require!(
