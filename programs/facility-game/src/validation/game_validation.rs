@@ -307,12 +307,14 @@ mod tests {
             purchaser: owner,
             purchased_at: 1000000,
             cost_paid: 300_000_000,
+            vrf_fee_paid: 2_077_400, // Realistic VRF fee
             is_opened: false,
-            entropy_sequence: 1,
+            vrf_sequence: 1,
             user_entropy_seed: 12345,
             final_random_value: 0,
             pack_id: 1,
-            reserve: [0; 16],
+            vrf_account: Pubkey::new_unique(),
+            reserve: [0; 8],
         };
         
         let opened_pack = SeedPack {

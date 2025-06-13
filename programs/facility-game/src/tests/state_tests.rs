@@ -79,20 +79,22 @@ mod state_tests {
     }
 
     #[test]
-    fn test_seed_pack_account_size() {
-        // Test SeedPack account size calculation
+    fn test_seed_pack_account_size_vrf_only() {
+        // Test VRF-only SeedPack account size calculation
         let expected_len = 8 + // discriminator
             32 + // purchaser
             8 + // purchased_at
             8 + // cost_paid
+            8 + // vrf_fee_paid
             1 + // is_opened
-            8 + // entropy_sequence
+            8 + // vrf_sequence
             8 + // user_entropy_seed
             8 + // final_random_value
             8 + // pack_id
-            16; // reserve
+            32 + // vrf_account (Pubkey)
+            8; // reserve
 
-        assert_eq!(SeedPack::LEN, expected_len, "SeedPack account size mismatch");
+        assert_eq!(SeedPack::LEN, expected_len, "VRF SeedPack account size mismatch");
     }
 
     #[test]

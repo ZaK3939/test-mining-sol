@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, MintTo, Transfer, Token, TokenAccount, Mint};
+use anchor_spl::token::{self, Transfer, TokenAccount, Mint};
+use anchor_spl::token_2022::{self as token_2022, Token2022, MintTo};
 use crate::state::*;
 use crate::error::*;
 use anchor_lang::solana_program::hash::hash;
@@ -22,7 +23,7 @@ pub fn transfer_tokens_with_cpi<'info>(
     from: &Account<'info, TokenAccount>,
     to: &Account<'info, TokenAccount>,
     authority: &Signer<'info>,
-    token_program: &Program<'info, Token>,
+    token_program: &Program<'info, Token2022>,
     amount: u64,
 ) -> Result<()> {
     let transfer_accounts = Transfer {
@@ -158,7 +159,7 @@ pub fn mint_tokens_to_user<'info>(
     reward_mint: &Account<'info, Mint>,
     user_token_account: &Account<'info, TokenAccount>,
     mint_authority: &UncheckedAccount<'info>,
-    token_program: &Program<'info, Token>,
+    token_program: &Program<'info, Token2022>,
     authority_bump: u8,
     amount: u64,
 ) -> Result<()> {
@@ -177,7 +178,7 @@ pub fn mint_tokens_to_user<'info>(
     let cpi_program = token_program.to_account_info();
     let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
     
-    token::mint_to(cpi_ctx, amount)?;
+    token_2022::mint_to(cpi_ctx, amount)?;
     
     Ok(())
 }

@@ -19,6 +19,8 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 [dependencies]
 anchor-lang = "0.31.1"
 anchor-spl = "0.31.1"
+spl-token-2022 = "6.0.0"
 mpl-token-metadata = "5.0.0"
-# pyth-entropy-sdk-solana = "1.0.0" # TODO: Add when available
+# pyth-entropy-sdk-solana = "1.0.0"  # Not yet available on crates.io, using simulation
+# switchboard-solana = "0.27.0"   # Temporarily disabled due to dependency conflicts
 arrayref = "0.3.7"

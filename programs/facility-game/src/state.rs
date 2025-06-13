@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
 
+// VRF専用にするため、RandomnessMethodは削除
+// 全てSwitchboard VRFで統一
+
 /// Global system configuration
 /// Stores all game parameters and admin settings
 #[account]
@@ -239,20 +242,24 @@ pub struct SeedPack {
     pub purchaser: Pubkey,
     /// Purchase timestamp
     pub purchased_at: i64,
-    /// Pack cost paid
+    /// Pack cost paid in WEED tokens
     pub cost_paid: u64,
+    /// VRF fee paid in SOL lamports (0 for Solana native)
+    pub vrf_fee_paid: u64,
     /// Whether pack has been opened
     pub is_opened: bool,
-    /// Pyth Entropy sequence number (for tracking the random request)
-    pub entropy_sequence: u64,
+    /// VRF sequence number (for tracking the VRF request)
+    pub vrf_sequence: u64,
     /// User-provided entropy seed (for additional randomness)
     pub user_entropy_seed: u64,
     /// Final random value (set after opening)
     pub final_random_value: u64,
     /// Pack ID
     pub pack_id: u64,
+    /// Switchboard VRF account
+    pub vrf_account: Pubkey,
     /// Reserved for future expansion
-    pub reserve: [u8; 16],
+    pub reserve: [u8; 8],
 }
 
 impl Seed {
@@ -272,12 +279,14 @@ impl SeedPack {
         32 + // purchaser
         8 + // purchased_at
         8 + // cost_paid
+        8 + // vrf_fee_paid
         1 + // is_opened
-        8 + // entropy_sequence
+        8 + // vrf_sequence
         8 + // user_entropy_seed
         8 + // final_random_value
         8 + // pack_id
-        16; // reserve
+        32 + // vrf_account (Pubkey)
+        8; // reserve
 }
 
 /// Invite code management PDA (Hash-based for privacy)
@@ -286,9 +295,9 @@ pub struct InviteCode {
     /// Invite code creator (user who can invite others)
     pub inviter: Pubkey,
     /// Current number of people invited
-    pub invites_used: u8,
+    pub invites_used: u16,
     /// Maximum invite limit for this user
-    pub invite_limit: u8,
+    pub invite_limit: u16,
     /// Hash of the invite code (SHA256(code + salt))
     pub code_hash: [u8; 32],
     /// Random salt for hash security
@@ -304,7 +313,7 @@ pub struct InviteCode {
 }
 
 impl InviteCode {
-    pub const LEN: usize = 8 + 32 + 1 + 1 + 32 + 16 + 2 + 8 + 1 + 15;
+    pub const LEN: usize = 8 + 32 + 2 + 2 + 32 + 16 + 2 + 8 + 1 + 15;
 }
 
 /// Single-use secret invite code PDA (Operator-only, hash-based)

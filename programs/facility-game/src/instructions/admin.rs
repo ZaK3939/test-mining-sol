@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token};
+use anchor_spl::token_2022::Token2022;
+use spl_token_2022::extension::transfer_fee::instruction::initialize_transfer_fee_config;
 use mpl_token_metadata::types::DataV2;
 use crate::state::*;
 
@@ -21,18 +22,16 @@ pub struct InitializeConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Context for creating reward token mint
+/// Context for creating reward token mint with transfer fee extension
 #[derive(Accounts)]
 pub struct CreateRewardMint<'info> {
+    /// CHECK: This will be manually initialized with transfer fee extension
     #[account(
-        init,
-        payer = admin,
-        mint::decimals = 6,
-        mint::authority = mint_authority,
+        mut,
         seeds = [b"reward_mint"],
         bump
     )]
-    pub reward_mint: Account<'info, Mint>,
+    pub reward_mint: UncheckedAccount<'info>,
     
     /// @dev Set mint authority as PDA
     #[account(
@@ -42,6 +41,18 @@ pub struct CreateRewardMint<'info> {
     /// CHECK: mint authority PDA
     pub mint_authority: UncheckedAccount<'info>,
     
+    /// Transfer fee config authority (same as mint authority)
+    #[account(
+        seeds = [b"mint_authority"],
+        bump
+    )]
+    /// CHECK: transfer fee config authority PDA
+    pub transfer_fee_config_authority: UncheckedAccount<'info>,
+    
+    /// Withdraw withheld authority (treasury)
+    /// CHECK: This should be the treasury pubkey
+    pub withdraw_withheld_authority: UncheckedAccount<'info>,
+    
     /// Token metadata account (optional for test environments)
     /// CHECK: Metadata account will be created by Metaplex if available
     pub metadata_account: UncheckedAccount<'info>,
@@ -49,7 +60,7 @@ pub struct CreateRewardMint<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     
-    pub token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
     
@@ -104,11 +115,80 @@ pub fn initialize_config(
     Ok(())
 }
 
-/// Create WEED token mint with metadata
+/// Create WEED token mint with transfer fee extension and metadata
 pub fn create_reward_mint(ctx: Context<CreateRewardMint>) -> Result<()> {
-    let mint_authority = &ctx.accounts.mint_authority;
+    use spl_token_2022::instruction;
     
-    msg!("WEED token mint created with PDA authority: {}", mint_authority.key());
+    let mint_authority = &ctx.accounts.mint_authority;
+    let transfer_fee_config_authority = &ctx.accounts.transfer_fee_config_authority;
+    let withdraw_withheld_authority = &ctx.accounts.withdraw_withheld_authority;
+    
+    // Create mint account
+    let space = anchor_spl::token_2022::spl_token_2022::extension::ExtensionType::try_calculate_account_len::<
+        anchor_spl::token_2022::spl_token_2022::state::Mint
+    >(&[anchor_spl::token_2022::spl_token_2022::extension::ExtensionType::TransferFeeConfig])?;
+    
+    let lamports = ctx.accounts.rent.minimum_balance(space);
+    
+    // Create account instruction
+    let create_account_ix = anchor_lang::solana_program::system_instruction::create_account(
+        &ctx.accounts.admin.key(),
+        &ctx.accounts.reward_mint.key(),
+        lamports,
+        space as u64,
+        &ctx.accounts.token_program.key(),
+    );
+    
+    // Initialize transfer fee extension
+    let transfer_fee_basis_points = 200u16; // 2.00%
+    let maximum_fee = 1_000_000_000u64; // 1000 WEED max fee
+    
+    let init_transfer_fee_ix = initialize_transfer_fee_config(
+        &ctx.accounts.token_program.key(),
+        &ctx.accounts.reward_mint.key(),
+        Some(&transfer_fee_config_authority.key()),
+        Some(&withdraw_withheld_authority.key()),
+        transfer_fee_basis_points,
+        maximum_fee,
+    )?;
+    
+    // Initialize mint
+    let init_mint_ix = instruction::initialize_mint2(
+        &ctx.accounts.token_program.key(),
+        &ctx.accounts.reward_mint.key(),
+        &mint_authority.key(),
+        Some(&mint_authority.key()),
+        6, // decimals
+    )?;
+    
+    // Execute instructions
+    anchor_lang::solana_program::program::invoke(
+        &create_account_ix,
+        &[
+            ctx.accounts.admin.to_account_info(),
+            ctx.accounts.reward_mint.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+        ],
+    )?;
+    
+    anchor_lang::solana_program::program::invoke(
+        &init_transfer_fee_ix,
+        &[
+            ctx.accounts.reward_mint.to_account_info(),
+            ctx.accounts.token_program.to_account_info(),
+        ],
+    )?;
+    
+    anchor_lang::solana_program::program::invoke(
+        &init_mint_ix,
+        &[
+            ctx.accounts.reward_mint.to_account_info(),
+            ctx.accounts.rent.to_account_info(),
+            ctx.accounts.token_program.to_account_info(),
+        ],
+    )?;
+    
+    msg!("WEED token mint created with 2% transfer fee using SPL Token 2022: {}", ctx.accounts.reward_mint.key());
     
     // Attempt to create token metadata if Metaplex is available
     if let Err(err) = create_token_metadata(&ctx) {

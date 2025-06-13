@@ -14,7 +14,6 @@ declare_id!("FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B");
 // 核心モジュールの宣言
 // Rustのモジュールシステムを使って、コードを論理的に分割
 pub mod state;        // アカウントの構造体定義
-// pub mod state_meteora; // Meteora統合用の拡張構造体 - temporarily disabled
 pub mod instructions; // 各命令のコンテキスト（必要なアカウント）定義
 pub mod error;        // カスタムエラー定義
 pub mod utils;        // ヘルパー関数
@@ -69,16 +68,25 @@ pub mod farm_game {
         instructions::admin::initialize_config(ctx, base_rate, halving_interval, treasury, protocol_referral_address)
     }
 
-    /// $WEEDトークンのミントアカウントを作成
+    /// $WEEDトークンのミントアカウントを作成（SPL Token 2022 + Transfer Fee Extension）
     /// ゲーム内通貨として使用される報酬トークンを初期化
     /// 
     /// # 機能
     /// - PDAによるミント権限管理（セキュリティ向上）
+    /// - SPL Token 2022のTransfer Fee Extension（2%手数料）
     /// - Metaplexメタデータ作成（トークン情報表示用）
     /// - 6桁精度での発行設定
+    /// - 自動手数料回収（treasury宛）
+    /// 
+    /// # Transfer Fee Extension
+    /// - 手数料: 2.00% (200 basis points)
+    /// - 最大手数料: 1000 WEED
+    /// - 手数料回収権限: treasury
+    /// - 設定変更権限: mint_authority PDA
     /// 
     /// # Security
     /// - mint_authorityはPDAで制御
+    /// - transfer_fee_config_authorityもPDAで制御
     /// - admin署名必須
     pub fn create_reward_mint(ctx: Context<CreateRewardMint>) -> Result<()> {
         instructions::admin::create_reward_mint(ctx)
@@ -166,42 +174,53 @@ pub mod farm_game {
     
     // ===== REFERRAL REWARD ACCUMULATION SYSTEM =====
     
-    /// Accumulate referral reward to a referrer's pending balance
-    /// Called when someone claims rewards to add commission to their referrer
+    /// 紹介報酬蓄積（内部処理用）
+    /// 他のユーザーが報酬請求時に自動実行される
     pub fn accumulate_referral_reward(
         ctx: Context<AccumulateReferralReward>,
         reward_amount: u64,
         referral_level: u8,
     ) -> Result<()> {
-        instructions::referral_rewards::accumulate_referral_reward(ctx, reward_amount, referral_level)
+        instructions::referral::accumulate_referral_reward(ctx, reward_amount, referral_level)
     }
     
-    /// View current pending referral rewards for a user
-    /// Allows users to check their accumulated referral commission
+    /// 未請求紹介報酬確認（読み取り専用）
+    /// UI表示用、請求前の金額確認
     pub fn view_pending_referral_rewards(ctx: Context<ViewPendingReferralRewards>) -> Result<()> {
-        instructions::referral_rewards::view_pending_referral_rewards(ctx)
+        instructions::referral::view_pending_referral_rewards(ctx)
     }
     
-    /// Enhanced claim reward that includes both farming and referral rewards
-    /// This is the main claim function users should call to get all accumulated rewards
+    /// 統合報酬請求（メイン関数）
+    /// 農場報酬と紹介報酬をすべて一度に請求する
+    /// 
+    /// # 処理フロー
+    /// 1. 半減期チェック・適用
+    /// 2. 農場報酬計算（比例配分）
+    /// 3. 蓄積された紹介報酬請求
+    /// 4. 新規紹介報酬分配（L1: 10%, L2: 5%）
+    /// 5. すべてのトークンを一括ミント・配布
+    /// 
+    /// # 統合処理のメリット
+    /// - 複数のトランザクションが不要
+    /// - ガス効率性向上
+    /// - ユーザー体験の向上
     pub fn claim_reward_with_referral_rewards(
         ctx: Context<ClaimRewardWithReferralRewards>
     ) -> Result<()> {
-        instructions::referral_rewards::claim_reward_with_referral_rewards(ctx)
+        instructions::referral::claim_reward_with_referral_rewards(ctx)
     }
 
     // ===== INVITE SYSTEM INSTRUCTIONS =====
 
-    /// 招待コードの作成
+    /// 招待コード作成
     /// 8文字のコードで新規ユーザーを招待し、紹介報酬を獲得
     /// 
     /// # Parameters
     /// * `invite_code` - 8バイトの招待コード（英数字のみ）
     /// 
-    /// # 招待システム
-    /// - 初期限度: 5人まで招待可能
-    /// - 管理者による限度拡張可能
-    /// - 多段階紹介報酬システム連携
+    /// # 招待制限
+    /// - 運営者: 255回（事実上無制限）
+    /// - 一般ユーザー: 5回まで
     /// 
     /// # セキュリティ
     /// - ハッシュベースでプライバシー確保
@@ -210,8 +229,8 @@ pub mod farm_game {
         instructions::invite::create_invite_code(ctx, invite_code)
     }
 
-    /// Use invite code to initialize user with referrer
-    /// Requires: plaintext code + inviter address
+    /// 招待コード使用
+    /// 招待コードでユーザー初期化と紹介関係確立
     pub fn use_invite_code(
         ctx: Context<UseInviteCode>, 
         invite_code: [u8; 8],
@@ -227,30 +246,55 @@ pub mod farm_game {
         instructions::seeds::initialize_seed_storage_instruction(ctx)
     }
 
-    /// ミステリーシードパックの購入（Pyth Entropy統合）
-    /// 300 $WEEDを燃焼してPyth Entropyで真の乱数を使用した高レアリティ種を獲得
+    /// ミステリーシードパックの購入（Switchboard VRF統合）
+    /// 300 $WEEDを燃焼 + VRF手数料で検証可能な乱数による高レアリティ種を獲得
     /// 
     /// # Parameters
     /// * `quantity` - 購入数量（1-100）
     /// * `user_entropy_seed` - ユーザー提供の乱数シード（追加の乱数性確保）
+    /// * `max_vrf_fee` - 支払い可能な最大VRF手数料（lamports）
     /// 
-    /// # Pyth Entropy統合
-    /// - コミットフェーズ: 購入時にPyth Entropyにランダム要求
-    /// - リビールフェーズ: 開封時にPyth Entropyから結果取得
-    /// - 二重ランダム性: ユーザーシード + オラクルシード
+    /// # Switchboard VRF統合
+    /// - 検証可能な真正乱数による最高品質の公平性
+    /// - コミット・リビール方式で操作不可能
+    /// - 第三者オラクルによる透明性保証
     /// 
-    /// # 確率テーブル（Pyth Entropy使用）
+    /// # コスト構造（正確な計算）
+    /// - WEED燃焼: 300 WEED × quantity
+    /// - VRF手数料: 約0.002 SOL（2,000,000 lamports）
+    ///   * 基本取引手数料: 5,000 × 15取引 = 75,000 lamports
+    ///   * ストレージレント: 2,400 lamports
+    ///   * オラクル処理費: 2,000,000 lamports
+    ///   * 総計: ~2,077,400 lamports
+    /// 
+    /// # VRF処理フロー
+    /// 1. **購入時（コミット）**: VRF要求 + 手数料支払い
+    /// 2. **開封時（リビール）**: VRF結果取得 + 種生成
+    /// 3. **透明性**: すべてオンチェーンで検証可能
+    /// 
+    /// # 確率テーブル（VRF保証済み）
     /// - Seed1 (100GP): 42.23%
     /// - Seed2 (180GP): 24.44%
     /// - Seed3 (420GP): 13.33%
-    /// - ...最高レアSeed9 (60000GP): 0.56%
+    /// - Seed4 (720GP): 8.33%
+    /// - Seed5 (1000GP): 5.56%
+    /// - Seed6 (5000GP): 3.33%
+    /// - Seed7 (15000GP): 1.33%
+    /// - Seed8 (30000GP): 0.89%
+    /// - Seed9 (60000GP): 0.56%
     /// 
     /// # セキュリティ
-    /// - 真の乱数による公平性保証
-    /// - 予測不可能な結果
-    /// - 透明性のあるオンチェーン検証
-    pub fn purchase_seed_pack(ctx: Context<PurchaseSeedPack>, quantity: u8, user_entropy_seed: u64) -> Result<()> {
-        instructions::seeds::purchase_seed_pack(ctx, quantity, user_entropy_seed)
+    /// - Switchboard VRFによる暗号学的証明
+    /// - オラクルネットワークによる分散検証
+    /// - 予測不可能性の数学的保証
+    /// - 完全なオンチェーン透明性
+    pub fn purchase_seed_pack(
+        ctx: Context<PurchaseSeedPack>, 
+        quantity: u8, 
+        user_entropy_seed: u64,
+        max_vrf_fee: u64
+    ) -> Result<()> {
+        instructions::seeds::purchase_seed_pack(ctx, quantity, user_entropy_seed, max_vrf_fee)
     }
 
     /// Open seed pack to reveal seeds
@@ -282,93 +326,9 @@ pub mod farm_game {
         instructions::seeds::batch_discard_seeds(ctx, seed_ids)
     }
 
-    // ===== TRADING SYSTEM INSTRUCTIONS =====
 
-
-    /// Convert accumulated fees to SOL via Meteora DEX
-    pub fn convert_fees_to_sol(ctx: Context<ConvertFeesToSol>) -> Result<()> {
-        instructions::meteora::convert_fees_to_sol(ctx)
-    }
-
-    /// Update Meteora pool configuration (admin only)
-    pub fn update_meteora_config(
-        ctx: Context<UpdateMeteoraConfig>,
-        meteora_pool: Pubkey,
-        pool_weed_vault: Pubkey,
-        pool_sol_vault: Pubkey,
-    ) -> Result<()> {
-        instructions::meteora::update_meteora_config(ctx, meteora_pool, pool_weed_vault, pool_sol_vault)
-    }
-
-    // ===== ADVANCED METEORA INTEGRATION =====
-    // Temporarily disabled meteora_admin functions
-
-    // /// Initialize Meteora configuration system (admin only)
-    // pub fn initialize_meteora_config(ctx: Context<InitializeMeteoraConfig>) -> Result<()> {
-    //     instructions::meteora_admin::initialize_meteora_config(ctx)
-    // }
-
-    // /// Configure DLMM pool settings (admin only)
-    // pub fn configure_dlmm_pool(
-    //     ctx: Context<AdminConfigureDlmmPool>, 
-    //     pool_config: DlmmPoolConfig
-    // ) -> Result<()> {
-    //     instructions::meteora_admin::configure_dlmm_pool(ctx, pool_config)
-    // }
-
-    // /// Update conversion settings (admin only)
-    // pub fn update_conversion_settings(
-    //     ctx: Context<UpdateConversionSettings>,
-    //     settings: ConversionSettings,
-    // ) -> Result<()> {
-    //     instructions::meteora_admin::update_conversion_settings(ctx, settings)
-    // }
-
-    // /// Swap WEED to SOL via DLMM with advanced features
-    // pub fn swap_weed_to_sol_via_dlmm(
-    //     ctx: Context<SwapWeedToSolViaDlmm>,
-    //     min_sol_output: u64,
-    //     slippage_tolerance_bps: Option<u16>,
-    // ) -> Result<()> {
-    //     instructions::meteora_minimal::swap_weed_to_sol_via_dlmm(ctx, min_sol_output, slippage_tolerance_bps)
-    // }
-
-    // /// Emergency pause/resume for Meteora conversions (admin only)
-    // pub fn emergency_pause_toggle(ctx: Context<EmergencyControl>, pause: bool) -> Result<()> {
-    //     instructions::meteora_admin::emergency_pause_toggle(ctx, pause)
-    // }
-
-    // /// Monitor pool health status
-    // pub fn monitor_pool_health(ctx: Context<MonitorPoolHealth>) -> Result<()> {
-    //     instructions::meteora_admin::monitor_pool_health(ctx)
-    // }
-
-    // /// View comprehensive Meteora statistics
-    // pub fn view_meteora_stats(ctx: Context<ViewMeteoraStats>) -> Result<()> {
-    //     instructions::meteora_admin::view_meteora_stats(ctx)
-    // }
-
-    // ===== TRANSFER SYSTEM =====
-
-    /// Transfer with fee system (FeePool accumulation)
-    pub fn transfer_with_fee(
-        ctx: Context<TransferWithImprovedFee>, 
-        amount: u64
-    ) -> Result<()> {
-        instructions::transfer_improved::transfer_with_improved_fee(ctx, amount)
-    }
-
-
-    /// Batch transfer with fee optimization
-    pub fn batch_transfer_with_fee(
-        ctx: Context<BatchTransferWithFee>,
-        transfers: Vec<instructions::transfer_improved::TransferInstruction>,
-    ) -> Result<()> {
-        instructions::transfer_improved::batch_transfer_with_fee(ctx, transfers)
-    }
-
-    // /// Check automatic conversion trigger
-    // pub fn check_auto_conversion_trigger(ctx: Context<SwapWeedToSolViaDlmm>) -> Result<bool> {
-    //     instructions::meteora_minimal::check_auto_conversion_trigger(ctx)
-    // }
+    // ===== TRANSFER FEE SYSTEM =====
+    // Using SPL Token Transfer Fee Extension instead of custom implementation
+    // The reward mint will be created with 2% transfer fee configuration
+    // No custom transfer instructions needed - fees handled automatically by SPL Token
 }

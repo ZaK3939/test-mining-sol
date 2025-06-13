@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount, Mint};
+use anchor_spl::token::{TokenAccount, Mint};
+use anchor_spl::token_2022::Token2022;
 use crate::state::*;
 use crate::error::*;
 use crate::utils::*;
@@ -153,7 +154,7 @@ pub struct ClaimRewardWithReferralRewards<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     
-    pub token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token2022>,
     
     // Optional referrer accounts for accumulating referral rewards
     pub level1_referrer_state: Option<Account<'info, UserState>>,

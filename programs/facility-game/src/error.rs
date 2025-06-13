@@ -147,6 +147,28 @@ pub enum GameError {
     #[msg("Invite code is inactive")]
     InviteCodeInactive,
     
+    // VRF-related errors
+    #[msg("VRF account is required for Switchboard VRF method")]
+    VrfAccountRequired,
+    
+    #[msg("VRF permission account is required for Switchboard VRF method")]
+    VrfPermissionRequired,
+    
+    #[msg("Switchboard program is required for Switchboard VRF method")]
+    SwitchboardProgramRequired,
+    
+    #[msg("Insufficient SOL balance for VRF fee")]
+    InsufficientSolForVrf,
+    
+    #[msg("VRF request failed")]
+    VrfRequestFailed,
+    
+    #[msg("VRF result not available yet")]
+    VrfResultNotAvailable,
+    
+    #[msg("Invalid VRF account")]
+    InvalidVrfAccount,
+    
     #[msg("Seed type limit reached - maximum 100 seeds per type")]
     SeedTypeLimitReached,
     

@@ -94,9 +94,9 @@ pub fn create_invite_code(
     
     // Determine invite limit
     let invite_limit = if ctx.accounts.inviter.key() == config.operator {
-        u8::MAX // Operator has unlimited invites
+        1024u16 // Operator has high invite limit (1024)
     } else {
-        config.max_invite_limit
+        config.max_invite_limit as u16
     };
     
     // Generate hash

@@ -638,6 +638,7 @@ dependencies = [
  "anchor-spl",
  "arrayref",
  "mpl-token-metadata",
+ "spl-token-2022",
 ]
 
 [[package]]

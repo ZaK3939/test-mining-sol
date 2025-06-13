@@ -3,7 +3,8 @@
 // 農場スペースはユーザーが種を植えて報酬を得るための基本単位です
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount};
+use anchor_spl::token::{self, Burn, Mint, TokenAccount};
+use anchor_spl::token_2022::Token2022;
 use crate::state::*;
 use crate::error::*;
 use crate::utils::*;
@@ -110,7 +111,7 @@ pub struct UpgradeFarmSpace<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     
-    pub token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token2022>,
 }
 
 /// Purchase farm space (Level 1)

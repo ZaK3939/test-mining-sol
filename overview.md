@@ -1,241 +1,237 @@
-# Solana Facility Game - 完全技術仕様書
+# Solana Facility Game - Complete Technical Specification
 
-## 🎯 プログラム概要
+## 🎯 Program Overview
 
-Solana 上に構築された高度な農場シミュレーションゲームです。半減期報酬システム、多段階紹介システム、拡張ストレージ管理を特徴とする複雑な経済メカニズムを実装しています。ユーザーが農場スペースを管理し、種を栽培し、戦略的最適化を通じて WEED トークンを獲得する完全な農業エコシステムを提供します。
+A sophisticated agricultural simulation game built on Solana featuring advanced economic mechanisms with halving reward systems, multi-level referral programs, and comprehensive storage management. This provides a complete agricultural ecosystem where users manage farm spaces, cultivate seeds, and earn WEED tokens through strategic optimization.
 
-**プログラム ID**: `FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B`
+**Program ID**: `FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B`
 
-### 🌟 主要な特徴
+### 🌟 Key Features
 
-- **⚡ 即座アップグレード**: 24時間クールダウンを廃止し、即座に農場レベルアップが可能
-- **📦 拡張ストレージ**: 2000個総容量、タイプ別100個制限、自動廃棄機能付き
-- **🔐 招待システム**: ハッシュベースで運営用（無制限）と一般ユーザー用（5回限定）の2パターン
-- **💰 高度な経済学**: 半減期メカニズムによる洗練された報酬分配システム
-- **🤝 多段階紹介**: L1（10%）、L2（5%）の紹介報酬システム
-- **🔬 数学的精密性**: 128 ビット算術によるオーバーフロー完全防止
+- **⚡ Instant Upgrades**: Eliminated 24-hour cooldowns - instant farm level upgrades
+- **📦 Advanced Storage**: 2,000 total capacity with per-type limits and auto-discard
+- **🔐 Hash-Based Invites**: Privacy-preserving invite system with operator/user tiers
+- **💰 SPL Token 2022**: Built-in 2% transfer fees using Transfer Fee Extension
+- **🤝 Multi-Level Referrals**: L1 (10%) and L2 (5%) referral reward system
+- **🎲 Switchboard VRF**: Verifiable random seed generation with cryptographic proofs
+- **🔬 Mathematical Precision**: Overflow protection with 128-bit arithmetic
 
-## 📋 目次
+## 📋 Table of Contents
 
-- [🏗️ コアアーキテクチャ](#-コアアーキテクチャ)
-- [📊 アカウント構造](#-アカウント構造)
-- [🎮 ゲームメカニクス](#-ゲームメカニクス)
-- [💰 経済システム](#-経済システム)
-- [🚀 高度な機能](#-高度な機能)
-- [📊 状態管理](#-状態管理)
-- [🔒 セキュリティ & 検証](#-セキュリティ--検証)
-- [📚 完全命令セット](#-完全命令セット)
-- [🧪 実装詳細](#-実装詳細)
+- [🏗️ Core Architecture](#-core-architecture)
+- [📊 Account Structure](#-account-structure)
+- [🎮 Game Mechanics](#-game-mechanics)
+- [💰 Economic System](#-economic-system)
+- [🚀 Advanced Features](#-advanced-features)
+- [📊 State Management](#-state-management)
+- [🔒 Security & Validation](#-security--validation)
+- [📚 Complete Instruction Set](#-complete-instruction-set)
+- [🧪 Implementation Details](#-implementation-details)
 
-## 🏗️ コアアーキテクチャ
+## 🏗️ Core Architecture
 
-### 🔧 モジュール構造
+### 🔧 Module Structure
 
 ```
 programs/facility-game/src/
-├── lib.rs                      # メインプログラムエントリー（30+ 命令）
-├── state.rs                    # アカウント構造 & データモデル（12+ 構造体）
-├── error.rs                    # カスタムエラー定義（112種類）
-├── constants.rs                # 中央集権化ゲーム定数
-├── economics.rs                # 経済計算 & 公式
-├── utils.rs                    # ヘルパー関数 & ユーティリティ
-├── error_handling.rs           # 拡張エラーハンドリング
-├── instructions/               # 命令実装
-│   ├── mod.rs                  # 命令モジュール統合
-│   ├── admin.rs                # 管理者命令
-│   ├── user.rs                 # ユーザー管理命令
-│   ├── farm.rs                 # 農場管理命令
-│   ├── rewards.rs              # 報酬システム命令
-│   ├── referral_rewards.rs     # 紹介報酬命令
-│   ├── seeds.rs                # 種システム命令
-│   ├── invite_secret.rs        # 招待システム
-│   ├── transfer.rs             # 転送システム
-│   ├── transfer_improved.rs    # 改良転送システム
-│   └── meteora.rs              # Meteora統合（基本機能）
-├── validation/                 # ビジネスルール検証
-│   ├── mod.rs                  # 検証モジュール統合
-│   ├── admin_validation.rs     # 管理者権限検証
-│   ├── economic_validation.rs  # 経済検証
-│   ├── game_validation.rs      # ゲームロジック検証
-│   ├── time_validation.rs      # 時間関連検証
-│   ├── user_validation.rs      # ユーザー検証
-│   └── common.rs               # 共通検証機能
-├── test_modules/               # 高度なテストモジュール
-│   ├── economics_advanced_tests.rs
-│   ├── error_comprehensive_tests.rs
-│   └── state_advanced_tests.rs
-└── tests/                      # ユニットテスト
-    ├── admin_tests.rs
-    ├── economic_distribution_tests.rs
-    ├── error_tests.rs
-    ├── referral_system_tests.rs
-    ├── state_tests.rs
-    └── utils_tests.rs
+├── lib.rs                      # Main program entry (17 instructions)
+├── state.rs                    # Account structures & data models
+├── error.rs                    # Custom error definitions
+├── constants.rs                # Centralized game constants
+├── economics.rs                # Economic calculations & formulas
+├── utils.rs                    # Helper functions & utilities
+├── error_handling.rs           # Extended error handling
+├── instructions/               # Instruction implementations
+│   ├── mod.rs                  # Instruction module integration
+│   ├── admin.rs                # Administrator instructions
+│   ├── user.rs                 # User management instructions
+│   ├── farm.rs                 # Farm management instructions
+│   ├── referral.rs             # Referral reward instructions
+│   ├── seeds.rs                # Seed system instructions
+│   └── invite.rs               # Hash-based invite system
+├── validation/                 # Business rule validation
+│   ├── mod.rs                  # Validation module integration
+│   ├── admin_validation.rs     # Admin permission validation
+│   ├── economic_validation.rs  # Economic validation
+│   ├── game_validation.rs      # Game logic validation
+│   ├── time_validation.rs      # Time-related validation
+│   ├── user_validation.rs      # User validation
+│   └── common.rs               # Common validation functions
+└── test_modules/               # Advanced test modules
+    ├── economics_advanced_tests.rs
+    ├── error_comprehensive_tests.rs
+    └── state_advanced_tests.rs
 ```
 
-### 🔑 重要な設計決定
+### 🔑 Key Design Decisions
 
 **PDA Seeds Pattern**:
 - Config: `["config"]`
 - UserState: `["user", user_pubkey]`
 - FarmSpace: `["farm_space", user_pubkey]`
 - SeedStorage: `["seed_storage", user_pubkey]`
-- InviteCode: `["secret_invite", inviter_pubkey, invite_code]`
+- InviteCode: `["invite", inviter_pubkey, sha256(invite_code)]`
 - RewardMint: `["reward_mint"]`
 - MintAuthority: `["mint_authority"]`
 - GlobalStats: `["global_stats"]`
 - FeePool: `["fee_pool"]`
 
-**即座アップグレードシステム**:
-- 24時間クールダウンを完全削除
-- WEEDトークン消費で即座にレベルアップ完了
-- アップグレード: Lv1→2: 3,500 WEED, Lv2→3: 18,000 WEED
-- ユーザビリティ改善とゲーム体験の向上
+**SPL Token 2022 Integration**:
+- Transfer Fee Extension with 2% automatic fees
+- No custom transfer implementations needed
+- Fees automatically collected to treasury
+- Maximum fee cap: 1,000 WEED per transfer
 
-**拡張ストレージシステム**:
-- 総容量: 2,000個（従来の2倍）
-- タイプ別制限: 各種類100個まで
-- 自動廃棄機能: 制限到達時の最低価値種自動削除
-- レント効率: 同じコスト/種比率を維持
+**Instant Upgrade System**:
+- Complete elimination of 24-hour cooldowns
+- WEED token consumption for immediate level completion
+- Upgrades: Lv1→2: 3,500 WEED, Lv2→3: 18,000 WEED
+- Enhanced user experience and game flow
 
-**招待システム**:
-- ハッシュベース（SHA256）による秘匿性確保
-- 運営招待: 無制限使用（255回）
-- 一般招待: 5回限定使用
-- プライバシー保護とスパム防止
+**Advanced Storage System**:
+- Total capacity: 2,000 seeds (2x previous capacity)
+- Per-type limits: 100 seeds per type
+- Auto-discard functionality for overflow management
+- Rent efficiency: maintained cost per seed ratio
 
-## 📊 アカウント構造
+**Hash-Based Invite System**:
+- SHA256 hashing for privacy protection
+- Operator invites: high-volume usage (1024 limit)
+- User invites: 5 per user limit
+- Privacy protection and spam prevention
 
-### 🔧 Config（グローバル設定）
+## 📊 Account Structure
+
+### 🔧 Config (Global Configuration)
 ```rust
 pub struct Config {
-    pub base_rate: u64,                    // 基本報酬レート（100 WEED/秒）
-    pub halving_interval: i64,             // 半減期間隔（7日）
-    pub next_halving_time: i64,            // 次回半減期タイムスタンプ
-    pub admin: Pubkey,                     // システム管理者
-    pub treasury: Pubkey,                  // 手数料収集ウォレット
-    pub seed_pack_cost: u64,               // 種パック価格（300 WEED）
-    pub seed_counter: u64,                 // グローバル種ID カウンター
-    pub seed_pack_counter: u64,            // グローバル種パックIDカウンター
-    pub farm_space_cost_sol: u64,          // 農場購入コスト（0.5 SOL）
-    pub max_invite_limit: u8,              // 最大招待制限（5）
-    pub trading_fee_percentage: u8,        // 取引手数料（2%）
-    pub protocol_referral_address: Pubkey, // プロトコル紹介アドレス
-    pub total_supply_minted: u64,          // 総発行WEED量
-    pub operator: Pubkey,                  // 運営者アドレス（無制限招待権限）
-    pub reserve: [u8; 2],                  // 将来拡張用
+    pub base_rate: u64,                    // Base reward rate (100 WEED/sec)
+    pub halving_interval: i64,             // Halving interval (7 days)
+    pub next_halving_time: i64,            // Next halving timestamp
+    pub admin: Pubkey,                     // System administrator
+    pub treasury: Pubkey,                  // Fee collection wallet
+    pub seed_pack_cost: u64,               // Seed pack price (300 WEED)
+    pub seed_counter: u64,                 // Global seed ID counter
+    pub seed_pack_counter: u64,            // Global seed pack ID counter
+    pub farm_space_cost_sol: u64,          // Farm purchase cost (0.5 SOL)
+    pub max_invite_limit: u8,              // Max invite limit (5)
+    pub trading_fee_percentage: u8,        // Trading fee (2%)
+    pub protocol_referral_address: Pubkey, // Protocol referral address
+    pub total_supply_minted: u64,          // Total WEED minted
+    pub operator: Pubkey,                  // Operator address (unlimited invites)
+    pub reserve: [u8; 2],                  // Future expansion
 }
 ```
 
-### 👤 UserState（ユーザー状態）
+### 👤 UserState (User State)
 ```rust
 pub struct UserState {
-    pub owner: Pubkey,                     // ユーザーウォレット
-    pub total_grow_power: u64,             // 総グロウパワー
-    pub last_harvest_time: i64,            // 最終報酬請求時刻
-    pub has_farm_space: bool,              // 農場所有フラグ
-    pub referrer: Option<Pubkey>,          // 紹介者（多段階報酬用）
-    pub pending_referral_rewards: u64,     // 未請求紹介報酬
-    pub reserve: [u8; 32],                 // 将来拡張用
+    pub owner: Pubkey,                     // User wallet
+    pub total_grow_power: u64,             // Total grow power
+    pub last_harvest_time: i64,            // Last reward claim time
+    pub has_farm_space: bool,              // Farm ownership flag
+    pub referrer: Option<Pubkey>,          // Referrer (multi-level rewards)
+    pub pending_referral_rewards: u64,     // Unclaimed referral rewards
+    pub reserve: [u8; 32],                 // Future expansion
 }
 ```
 
-### 🏭 FarmSpace（農場スペース）
+### 🏭 FarmSpace (Farm Space)
 ```rust
 pub struct FarmSpace {
-    pub owner: Pubkey,                     // 農場所有者
-    pub level: u8,                         // レベル（1-5）
-    pub capacity: u8,                      // 容量（4,8,12,16,20）
-    pub seed_count: u8,                    // 植付け済み種数
-    pub total_grow_power: u64,             // 農場総グロウパワー
-    pub reserve: [u8; 32],                 // 将来拡張用
+    pub owner: Pubkey,                     // Farm owner
+    pub level: u8,                         // Level (1-5)
+    pub capacity: u8,                      // Capacity (4,8,12,16,20)
+    pub seed_count: u8,                    // Planted seed count
+    pub total_grow_power: u64,             // Farm total grow power
+    pub reserve: [u8; 32],                 // Future expansion
 }
 ```
 
-### 📦 SeedStorage（拡張ストレージ）
+### 📦 SeedStorage (Advanced Storage)
 ```rust
 pub struct SeedStorage {
-    pub owner: Pubkey,                     // ストレージ所有者
-    pub seed_ids: Vec<u64>,                // 種IDリスト（最大2000個）
-    pub total_seeds: u32,                  // 総種数
-    pub seed_type_counts: [u16; 9],        // タイプ別カウント（各100個制限）
-    pub reserve: [u8; 16],                 // 将来拡張用
+    pub owner: Pubkey,                     // Storage owner
+    pub seed_ids: Vec<u64>,                // Seed ID list (max 2,000)
+    pub total_seeds: u32,                  // Total seed count
+    pub seed_type_counts: [u16; 9],        // Per-type counts (100 each limit)
+    pub reserve: [u8; 16],                 // Future expansion
 }
 
 impl SeedStorage {
-    pub const MAX_TOTAL_SEEDS: usize = 2_000;     // 総容量
-    pub const MAX_SEEDS_PER_TYPE: u16 = 100;      // タイプ別制限
+    pub const MAX_TOTAL_SEEDS: usize = 2_000;     // Total capacity
+    pub const MAX_SEEDS_PER_TYPE: u16 = 100;      // Per-type limit
     
-    // 容量チェック（総制限）
+    // Capacity check (total limit)
     pub fn can_add_seed(&self) -> bool;
     
-    // 容量チェック（タイプ別制限）
+    // Capacity check (per-type limit)
     pub fn can_add_seed_type(&self, seed_type: &SeedType) -> bool;
     
-    // 自動廃棄機能（タイプ制限到達時）
+    // Auto-discard function (on type limit reached)
     pub fn auto_discard_excess(&mut self, new_seed_type: &SeedType) -> Result<u16>;
 }
 ```
 
-### 🔐 InviteCode（招待コード）
+### 🔐 InviteCode (Invite Code)
 ```rust
 pub struct InviteCode {
-    pub inviter: Pubkey,                   // 招待者
-    pub invite_limit: u8,                  // 招待限度（運営255、一般5）
-    pub invites_used: u8,                  // 使用済み招待数
-    pub creation_time: i64,                // 作成時刻
-    pub reserve: [u8; 32],                 // 将来拡張用
+    pub inviter: Pubkey,                   // Inviter
+    pub invite_limit: u16,                 // Invite limit (operator 1024, user 5)
+    pub invites_used: u16,                 // Used invites count
+    pub creation_time: i64,                // Creation time
+    pub reserve: [u8; 32],                 // Future expansion
 }
 ```
 
-## 🎮 ゲームメカニクス
+## 🎮 Game Mechanics
 
-### ⚡ 即座農場アップグレードシステム
+### ⚡ Instant Farm Upgrade System
 
-#### アップグレード仕様
-- **即座実行**: クールダウンなし、WEEDトークン消費で即座完了
-- **レベル別コスト**: 
-  - Lv1→2: 3,500 WEED（容量4→8）
-  - Lv2→3: 18,000 WEED（容量8→12）
-  - Lv3→4: 20,000 WEED（容量12→16）
-  - Lv4→5: 25,000 WEED（容量16→20）
+#### Upgrade Specifications
+- **Instant Execution**: No cooldowns, immediate completion via WEED consumption
+- **Level-based Costs**: 
+  - Lv1→2: 3,500 WEED (capacity 4→8)
+  - Lv2→3: 18,000 WEED (capacity 8→12)
+  - Lv3→4: 20,000 WEED (capacity 12→16)
+  - Lv4→5: 25,000 WEED (capacity 16→20)
 
-#### 実装詳細
+#### Implementation Details
 ```rust
 pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
-    // 即座実行 - クールダウンチェックなし
-    // WEEDトークン消費
-    // レベル＆容量即座更新
+    // Instant execution - no cooldown checks
+    // WEED token consumption
+    // Immediate level & capacity updates
 }
 ```
 
-### 📦 拡張ストレージシステム
+### 📦 Advanced Storage System
 
-#### ストレージ仕様
-- **総容量**: 2,000個（従来の2倍）
-- **タイプ別制限**: 各種類100個まで
-- **アカウント費用**: ~0.12 SOL（コスト効率は従来と同等）
-- **レント回収**: 種廃棄時に個別レント回収可能
+#### Storage Specifications
+- **Total Capacity**: 2,000 seeds (2x previous capacity)
+- **Per-Type Limits**: 100 seeds per type maximum
+- **Account Cost**: ~0.12 SOL (cost efficiency maintained)
+- **Rent Recovery**: Individual rent recovery on seed discard
 
-#### 自動廃棄機能
+#### Auto-Discard Functionality
 ```rust
-// タイプ制限到達時の自動廃棄ロジック
+// Auto-discard logic when type limit reached
 pub fn auto_discard_excess(&mut self, new_seed_type: &SeedType) -> Result<u16> {
-    // 制限チェック
-    // 最低価値種特定
-    // 自動廃棄実行
-    // カウンター更新
+    // Limit check
+    // Identify lowest value seeds
+    // Execute auto-discard
+    // Update counters
 }
 ```
 
-#### 経済分析
-- **容量効率**: 種あたりコスト変わらず、容量2倍
-- **管理改善**: タイプ別制限でバランス取れたコレクション
-- **戦略性向上**: レア種優先保管、コモン種自動整理
+#### Economic Analysis
+- **Capacity Efficiency**: Same cost per seed, double capacity
+- **Management Improvement**: Per-type limits enable balanced collections
+- **Strategic Enhancement**: Rare seed prioritization, common seed auto-cleanup
 
-### 🔐 招待システム
+### 🔐 Hash-Based Invite System
 
-#### ハッシュベース設計
+#### Hash-Based Design
 ```rust
 // SHA256(invite_code + salt + inviter_pubkey)
 pub fn create_invite_code(
@@ -250,74 +246,75 @@ pub fn use_invite_code(
 ) -> Result<()>;
 ```
 
-#### 招待パターン
-1. **運営招待**:
-   - 制限: 255回（事実上無制限）
-   - 用途: マーケティング、イベント、初期ユーザー獲得
-   - 管理: 運営者アドレスから発行
+#### Invite Patterns
+1. **Operator Invites**:
+   - Limit: 1024 uses (high-volume marketing)
+   - Purpose: Marketing campaigns, events, initial user acquisition
+   - Management: Issued from operator address
 
-2. **一般ユーザー招待**:
-   - 制限: 5回
-   - 用途: 友達招待、コミュニティ成長
-   - 管理: 個別ユーザーが発行
+2. **User Invites**:
+   - Limit: 5 uses
+   - Purpose: Friend invitations, community growth
+   - Management: Individual user issuance
 
-#### プライバシー保護
-- 招待コードはハッシュ化され、プレーンテキストは保存されない
-- 招待者アドレスが必要で、ブルートフォース攻撃を防ぐ
-- PDAベースで重複防止
+#### Privacy Protection
+- Invite codes are hashed, plain text never stored
+- Requires inviter address, prevents brute force attacks
+- PDA-based duplicate prevention
 
-## 💰 経済システム
+## 💰 Economic System
 
-### 💎 報酬分配システム
+### 💎 Reward Distribution System
 
-#### 比例配分計算式
+#### Proportional Distribution Formula
 ```
-ユーザー報酬 = (ユーザーGrow Power / 全体Grow Power) × 基本レート × 経過時間
+User Reward = (User Grow Power / Total Grow Power) × Base Rate × Elapsed Time
 ```
 
-#### 半減期メカニズム
-- **間隔**: 7日ごと（カスタマイズ可能）
-- **効果**: 基本レートを50%削減
-- **目的**: インフレ抑制、長期価値維持
+#### Halving Mechanism
+- **Interval**: Every 7 days (customizable)
+- **Effect**: 50% reduction in base rate
+- **Purpose**: Inflation control, long-term value preservation
 
-### 🤝 多段階紹介システム
+### 🤝 Multi-Level Referral System
 
-#### 紹介報酬率
-- **Level 1（直接招待）**: 10%
-- **Level 2（間接招待）**: 5%
-- **最大深度**: 2レベル
+#### Referral Reward Rates
+- **Level 1 (Direct Invites)**: 10%
+- **Level 2 (Indirect Invites)**: 5%
+- **Maximum Depth**: 2 levels
 
-#### 実装詳細
+#### Implementation Details
 ```rust
 pub fn claim_reward_with_referral_rewards(
     ctx: Context<ClaimRewardWithReferralRewards>
 ) -> Result<()> {
-    // 基本報酬請求
+    // Base reward claim
     // L1: base_reward × 10%
     // L2: base_reward × 5%
-    // プロトコルアドレス除外
-    // 統合処理で一度にすべて実行
+    // Protocol address exclusion
+    // Integrated processing for all at once
 }
 ```
 
-### 💸 手数料システム
+### 💸 SPL Token 2022 Fee System
 
-#### 取引手数料
-- **レート**: 2%
-- **収集先**: FeePool PDA
-- **変換**: Meteora経由でSOLに変換（実装済み）
+#### Transfer Fee Extension
+- **Rate**: 2.00% (200 basis points)
+- **Maximum Fee**: 1,000 WEED per transfer
+- **Collection**: Automatic to treasury via SPL Token 2022
+- **Configuration Authority**: mint_authority PDA
 
-#### 手数料の流れ
-1. ユーザー間転送 → 2%手数料徴収
-2. FeePool蓄積
-3. 管理者による定期的SOL変換
-4. プロトコル運営資金として活用
+#### Fee Flow
+1. User transfers → 2% fee automatically collected
+2. Treasury accumulation via SPL Token 2022
+3. No custom transfer logic needed
+4. Fees can be withdrawn by treasury authority
 
-## 🚀 高度な機能
+## 🚀 Advanced Features
 
-### 🌱 種システム
+### 🌱 Seed System
 
-#### 種タイプとレアリティ
+#### Seed Types and Rarity
 ```rust
 pub enum SeedType {
     Seed1 = 0,  // 100GP (42.23%)
@@ -332,139 +329,115 @@ pub enum SeedType {
 }
 ```
 
-#### ミステリーパック
-- **コスト**: 300 WEED
-- **期待値**: 1,226.79 グロウパワー
-- **効率**: 4.09 GP/WEED
-- **最大購入**: 100パック/回
+#### Mystery Packs
+- **Cost**: 300 WEED + VRF fees (~0.002 SOL)
+- **Expected Value**: 1,226.79 grow power
+- **Efficiency**: 4.09 GP/WEED
+- **Maximum Purchase**: 100 packs per transaction
 
-### 🔄 Meteora統合
+### 🎲 Switchboard VRF Integration
 
-#### 基本機能（実装済み）
+#### Verifiable Randomness
+- **Cryptographic Proofs**: Third-party oracle verification
+- **Transparent Probability**: On-chain verification of seed rarities
+- **Anti-Manipulation**: Commit-reveal pattern prevents gaming
+- **Quality Assurance**: True randomness vs. pseudo-random
+
+#### VRF Cost Structure
+- **WEED Burn**: 300 WEED × quantity
+- **VRF Fee**: ~0.002 SOL (2,000,000 lamports)
+  - Base transaction fees: 5,000 × 15 transactions = 75,000 lamports
+  - Storage rent: 2,400 lamports
+  - Oracle processing: 2,000,000 lamports
+  - Total: ~2,077,400 lamports
+
+## 📚 Complete Instruction Set
+
+### 👨‍💼 Administrator Instructions (5)
+1. `initialize_config` - System configuration initialization
+2. `create_reward_mint` - WEED token mint creation (SPL Token 2022 + Transfer Fee)
+3. `initialize_global_stats` - Global statistics initialization
+4. `initialize_fee_pool` - Fee pool initialization
+5. `update_config` - System configuration updates
+
+### 👤 User Management Instructions (1)
+6. `init_user` - User account initialization
+
+### 🏭 Farm Management Instructions (2)
+7. `buy_farm_space` - Farm space purchase (0.5 SOL)
+8. `upgrade_farm_space` - **Instant farm upgrades**
+
+### 💰 Reward System Instructions (3)
+9. `claim_reward_with_referral_rewards` - **Integrated reward claim** (farm + referral)
+10. `accumulate_referral_reward` - Referral reward accumulation (internal)
+11. `view_pending_referral_rewards` - Unclaimed referral rewards view
+
+### 🔐 Invite System Instructions (2)
+12. `create_invite_code` - **Hash-based invite code creation**
+13. `use_invite_code` - **Hash-based invite code usage**
+
+### 🌱 Seed System Instructions (7)
+14. `initialize_seed_storage` - **Advanced storage initialization**
+15. `purchase_seed_pack` - Mystery pack purchase (Switchboard VRF)
+16. `open_seed_pack` - Pack opening with verifiable randomness
+17. `plant_seed` - Seed planting
+18. `remove_seed` - Seed removal
+19. `discard_seed` - Seed discard (rent recovery)
+20. `batch_discard_seeds` - Batch seed discard (efficient rent recovery)
+
+## 🔒 Security & Validation
+
+### 🛡️ Security Design Principles
+
+#### PDA-Based Access Control
+- All accounts managed via PDAs
+- Signer-based ownership verification
+- Cross-program call restrictions
+
+#### Numerical Overflow Prevention
 ```rust
-// 手数料のSOL変換
-pub fn convert_fees_to_sol(ctx: Context<ConvertFeesToSol>) -> Result<()>;
-
-// Meteora設定更新
-pub fn update_meteora_config(
-    ctx: Context<UpdateMeteoraConfig>,
-    meteora_pool: Pubkey,
-    pool_weed_vault: Pubkey,
-    pool_sol_vault: Pubkey,
-) -> Result<()>;
+// checked_add, checked_mul usage throughout
+// u64/u128 for large capacity calculations
+// Comprehensive overflow protection
 ```
 
-#### 高度機能（準備済み、コメントアウト）
-- DLMM（Dynamic Liquidity Market Maker）統合
-- 自動流動性管理
-- スリッページ制御
-- 緊急停止機能
+#### Comprehensive Error Handling
+- 100+ detailed error definitions
+- Business logic validation
+- Economic constraint checks
 
-## 📚 完全命令セット
+### 🧪 Testing Framework
 
-### 👨‍💼 管理者命令
-1. `initialize_config` - システム設定初期化
-2. `create_reward_mint` - WEEDトークンミント作成
-3. `initialize_global_stats` - グローバル統計初期化
-4. `initialize_fee_pool` - 手数料プール初期化
-5. `update_config` - システム設定更新
+#### Integration Tests
+- Complete user journey testing
+- Operator/user invite pattern verification
+- Storage system functionality testing
+- Error case coverage testing
 
-### 👤 ユーザー管理命令
-6. `init_user` - ユーザーアカウント初期化
+#### Unit Tests
+- Individual module functionality tests
+- Economic calculation accuracy verification
+- Security boundary testing
 
-### 🏭 農場管理命令
-7. `buy_farm_space` - 農場スペース購入（0.5 SOL）
-8. `upgrade_farm_space` - **即座農場アップグレード**
+## 🎉 Summary
 
-### 💰 報酬システム命令
-9. `claim_reward_with_referral_rewards` - **統合報酬請求**（農場＋紹介報酬すべて）
-10. `accumulate_referral_reward` - 紹介報酬蓄積（内部処理用）
-11. `view_pending_referral_rewards` - 未請求紹介報酬確認
+Solana Facility Game is an advanced agricultural simulation game featuring **instant upgrades**, **advanced storage systems**, **hash-based invite systems**, and **SPL Token 2022 integration** as core components.
 
-### 🔐 招待システム命令
-12. `create_invite_code` - **招待コード作成**
-13. `use_invite_code` - **招待コード使用**
+### Key Technical Achievements
+1. **User Experience Enhancement**: Instant upgrades via 24-hour cooldown elimination
+2. **Scalability**: 2,000 seed storage capacity with per-type auto-management
+3. **Privacy Protection**: Hash-based invite system with cryptographic security
+4. **Economic Simplification**: SPL Token 2022 Transfer Fee Extension eliminates custom fee logic
+5. **Verifiable Fairness**: Switchboard VRF integration for true randomness
+6. **Extensibility**: Modular design supporting future feature additions
 
-### 🌱 種システム命令
-14. `initialize_seed_storage` - **拡張ストレージ初期化**
-15. `purchase_seed_pack` - ミステリーパック購入
-16. `open_seed_pack` - パック開封
-17. `plant_seed` - 種植え
-18. `remove_seed` - 種除去
-19. `discard_seed` - 種廃棄（レント回収）
-20. `batch_discard_seeds` - 一括種廃棄（効率的レント回収）
+This implementation provides users with a comfortable gaming experience while ensuring long-term economic stability and community growth for the protocol.
 
-### 💸 取引システム命令
-21. `transfer_with_improved_fee` - **手数料付き転送**（FeePool蓄積、推奨）
-22. `batch_transfer_with_fee` - 一括手数料転送
+### Technology Stack
+- **Solana**: High-performance blockchain for real-time gaming
+- **Anchor Framework**: Type-safe Rust development
+- **SPL Token 2022**: Advanced token features with built-in fees
+- **Switchboard VRF**: Verifiable random functions
+- **SHA256**: Cryptographic hashing for privacy
 
-### 🔄 Meteora統合命令
-23. `convert_fees_to_sol` - **手数料SOL変換**
-24. `update_meteora_config` - Meteora設定更新
-
-### 🚀 実装された機能の完成度
-
-#### ✅ 完全実装済み
-- **即座アップグレード**: 24時間クールダウン完全削除
-- **拡張ストレージ**: 2000個容量、タイプ別制限、自動廃棄
-- **招待システム**: ハッシュベース、運営/一般パターン
-- **多段階紹介**: L1/L2報酬分配
-- **基本報酬システム**: 比例配分、半減期
-- **手数料システム**: 2%徴収、FeePool蓄積
-
-#### 🔄 基本実装済み（機能拡張可能）
-- **Meteora統合**: 基本機能実装、高度機能準備済み
-- **種システム**: 基本機能完備、Pyth Entropy統合準備済み
-
-#### 📈 拡張可能性
-- DLMM高度機能の有効化
-- Pyth Entropy真正乱数統合
-- NFT統合（種の個別特性）
-- ガバナンストークン統合
-
-## 🔒 セキュリティ & 検証
-
-### 🛡️ セキュリティ設計原則
-
-#### PDAベースアクセス制御
-- 全アカウントがPDAsで管理
-- 署名者ベース所有権検証
-- クロスプログラム呼び出し制限
-
-#### 数値オーバーフロー防止
-```rust
-use anchor_lang::__private::ZeroCopyAccessor;
-// checked_add, checked_mul等を使用
-// u64/u128による大容量計算対応
-```
-
-#### 包括的エラーハンドリング
-- 112種類の詳細エラー定義
-- ビジネスロジック検証
-- 経済的制約チェック
-
-### 🧪 テスト体系
-
-#### 統合テスト
-- 完全ユーザージャーニーテスト
-- 運営/一般招待パターン検証
-- ストレージシステム機能テスト
-- エラーケース網羅テスト
-
-#### ユニットテスト
-- 個別モジュール機能テスト
-- 経済計算正確性検証
-- セキュリティ境界テスト
-
-## 🎉 まとめ
-
-Solana Facility Gameは、**即座アップグレード**、**拡張ストレージシステム**、**招待システム**を中核とする高度な農場シミュレーションゲームです。
-
-### 主要な技術的達成
-1. **ユーザビリティ改善**: 24時間クールダウン削除による即座アップグレード
-2. **スケーラビリティ**: 2000個ストレージ容量、タイプ別自動管理
-3. **プライバシー保護**: ハッシュベース招待システム
-4. **経済バランス**: 持続可能な報酬分配と半減期メカニズム
-5. **拡張性**: モジュラー設計による将来機能追加対応
-
-この実装により、ユーザーは快適なゲーム体験を得ながら、プロトコルは長期的な経済安定性とコミュニティ成長を実現します。
+The simplified architecture eliminates complex custom transfer logic while maintaining all economic incentives through battle-tested SPL Token standards.
