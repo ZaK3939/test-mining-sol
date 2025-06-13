@@ -151,7 +151,7 @@ pub fn get_upgrade_cost(current_level: u8) -> Result<u64> {
         return Err(GameError::MaxLevelReached.into());
     }
     
-    Ok(UPGRADE_COSTS[(current_level - 1) as usize])
+    Ok(LEGACY_UPGRADE_COSTS[(current_level - 1) as usize])
 }
 
 /// Calculate cost efficiency for upgrades (cost per capacity slot)
@@ -397,13 +397,13 @@ mod tests {
     #[test]
     fn test_upgrade_calculations() {
         // Test upgrade costs
-        assert_eq!(get_upgrade_cost(1).unwrap(), UPGRADE_COSTS[0]);
-        assert_eq!(get_upgrade_cost(4).unwrap(), UPGRADE_COSTS[3]);
+        assert_eq!(get_upgrade_cost(1).unwrap(), LEGACY_UPGRADE_COSTS[0]);
+        assert_eq!(get_upgrade_cost(4).unwrap(), LEGACY_UPGRADE_COSTS[3]);
         assert!(get_upgrade_cost(5).is_err()); // Max level
 
         // Test upgrade efficiency
         let efficiency = calculate_upgrade_efficiency(1).unwrap();
-        let expected = UPGRADE_COSTS[0] / (FARM_CAPACITIES[1] - FARM_CAPACITIES[0]) as u64;
+        let expected = LEGACY_UPGRADE_COSTS[0] / (FARM_CAPACITIES[1] - FARM_CAPACITIES[0]) as u64;
         assert_eq!(efficiency, expected);
     }
 

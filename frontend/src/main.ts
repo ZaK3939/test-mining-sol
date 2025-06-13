@@ -297,7 +297,7 @@ class FarmGameApp {
 
   private async handleCompleteUpgrade() {
     logger.info('✅ アップグレード完了機能');
-    await this.gameService.completeFarmSpaceUpgrade(this.uiCallbacks);
+    // TODO: Implement complete upgrade functionality
   }
 
   private async handleTransferTokens() {
@@ -321,7 +321,7 @@ class FarmGameApp {
 
   private async handlePurchaseSeedPack() {
     logger.info('📦 シードパック購入機能');
-    await this.gameService.purchaseSeedPack(this.uiCallbacks);
+    await this.gameService.purchaseSeedPack(1, this.uiCallbacks);
   }
 
   private async handleOpenSeedPack() {
@@ -335,7 +335,7 @@ class FarmGameApp {
         throw new Error('シードパックIDが入力されていません');
       }
 
-      await this.gameService.openSeedPack(parseInt(seedPackId), this.uiCallbacks);
+      await this.gameService.openSeedPack(parseInt(seedPackId), 1, this.uiCallbacks);
     } catch (error) {
       this.showError(`入力エラー: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -547,7 +547,7 @@ class FarmGameApp {
     } catch (error) {
       this.hideLoading();
       this.showError(`ヘルスチェックエラー: ${error}`);
-      logger.error('ヘルスチェックエラー:', error);
+      logger.error(`ヘルスチェックエラー: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -737,8 +737,8 @@ class FarmGameApp {
       this.showLoading('📊 グローバル統計取得中...');
       
       const stats = await this.gameService.fetchGlobalStats();
-      const config = await this.gameService.fetchConfig();
-      const feePool = await this.gameService.fetchFeePool();
+      await this.gameService.fetchConfig();
+      await this.gameService.fetchFeePool();
       
       if (stats) {
         document.getElementById('global-total-grow-power')!.textContent = stats.totalGrowPower.toString();
@@ -750,16 +750,17 @@ class FarmGameApp {
         document.getElementById('global-last-update')!.textContent = lastUpdate;
       }
       
-      if (feePool) {
-        document.getElementById('global-fee-pool-balance')!.textContent = `${(feePool.accumulatedFees / 1_000_000).toFixed(6)} WEED`;
-      }
+      // Fee pool info (currently disabled)
+      // if (feePool) {
+      //   document.getElementById('global-fee-pool-balance')!.textContent = `${(feePool.accumulatedFees / 1_000_000).toFixed(6)} WEED`;
+      // }
       
       this.hideLoading();
       this.showSuccess('📊 グローバル統計を更新しました');
     } catch (error) {
       this.hideLoading();
       this.showError(`統計取得エラー: ${error}`);
-      logger.error('グローバル統計取得エラー:', error);
+      logger.error(`グローバル統計取得エラー: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -790,7 +791,7 @@ class FarmGameApp {
     } catch (error) {
       this.hideLoading();
       this.showError(`初期化フロー確認エラー: ${error}`);
-      logger.error('初期化フロー確認エラー:', error);
+      logger.error(`初期化フロー確認エラー: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

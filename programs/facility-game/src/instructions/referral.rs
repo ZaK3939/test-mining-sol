@@ -65,8 +65,16 @@ pub fn accumulate_referral_reward(
         .and_then(|result| result.checked_div(100))
         .ok_or(GameError::CalculationOverflow)?;
     
-    // Add to pending referral rewards
-    ctx.accounts.referrer_state.pending_referral_rewards = ctx.accounts.referrer_state.pending_referral_rewards
+    // Add to pending referral rewards with safety checks
+    let current_pending = ctx.accounts.referrer_state.pending_referral_rewards;
+    let max_allowed_pending = 1_000_000_000u64; // 1B tokens maximum pending
+    
+    require!(
+        current_pending < max_allowed_pending,
+        GameError::PendingRewardsLimitExceeded
+    );
+    
+    ctx.accounts.referrer_state.pending_referral_rewards = current_pending
         .checked_add(referral_reward)
         .ok_or(GameError::CalculationOverflow)?;
     

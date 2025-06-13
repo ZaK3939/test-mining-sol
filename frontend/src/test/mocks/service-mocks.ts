@@ -4,7 +4,8 @@
  */
 
 import { vi, type MockedFunction } from 'vitest';
-import type { Connection, PublicKey, Keypair } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
+import type { Connection } from '@solana/web3.js';
 import type { WalletAdapter } from '../../types/program-types';
 import type { UICallbacks } from '../../types';
 
@@ -103,7 +104,7 @@ export class MockAnchorClient {
   };
 
   // User management
-  initializeUser = vi.fn().mockImplementation(async (referrer?: string) => {
+  initializeUser = vi.fn().mockImplementation(async (_referrer?: string) => {
     await this.simulateTransaction();
     this.gameState.hasUserState = true;
     return 'user_initialized_signature';
@@ -143,6 +144,16 @@ export class MockAnchorClient {
     return 'rewards_claimed_signature';
   });
 
+  claimRewardWithReferralRewards = vi.fn().mockImplementation(async () => {
+    await this.simulateTransaction();
+    const rewards = this.gameState.claimableRewards;
+    const referralRewards = 25; // Mock referral rewards
+    this.gameState.claimableRewards = 0;
+    this.gameState.lastHarvestTime = Date.now();
+    this.gameState.balance += rewards + referralRewards;
+    return 'rewards_with_referral_claimed_signature';
+  });
+
   // Seed management
   purchaseSeedPack = vi.fn().mockImplementation(async () => {
     await this.simulateTransaction();
@@ -150,13 +161,13 @@ export class MockAnchorClient {
     return 'seed_pack_purchased_signature';
   });
 
-  openSeedPack = vi.fn().mockImplementation(async (packId: string) => {
+  openSeedPack = vi.fn().mockImplementation(async (_packId: string) => {
     await this.simulateTransaction();
     const seedType = Math.floor(Math.random() * 9) + 1; // Random seed 1-9
     return { seedType, signature: 'seed_pack_opened_signature' };
   });
 
-  plantSeed = vi.fn().mockImplementation(async (seedId: string) => {
+  plantSeed = vi.fn().mockImplementation(async (_seedId: string) => {
     await this.simulateTransaction();
     if (this.gameState.seedCount < this.gameState.farmCapacity) {
       this.gameState.seedCount += 1;
@@ -165,7 +176,7 @@ export class MockAnchorClient {
     return 'seed_planted_signature';
   });
 
-  removeSeed = vi.fn().mockImplementation(async (seedId: string) => {
+  removeSeed = vi.fn().mockImplementation(async (_seedId: string) => {
     await this.simulateTransaction();
     if (this.gameState.seedCount > 0) {
       this.gameState.seedCount -= 1;
@@ -175,12 +186,12 @@ export class MockAnchorClient {
   });
 
   // Referral system
-  createInviteCode = vi.fn().mockImplementation(async (code: string) => {
+  createInviteCode = vi.fn().mockImplementation(async (_code: string) => {
     await this.simulateTransaction();
     return 'invite_code_created_signature';
   });
 
-  useInviteCode = vi.fn().mockImplementation(async (code: string) => {
+  useInviteCode = vi.fn().mockImplementation(async (_code: string) => {
     await this.simulateTransaction();
     return 'invite_code_used_signature';
   });
@@ -291,7 +302,7 @@ export class MockGameService {
   // User operations
   initializeUser = vi.fn().mockImplementation(async (callbacks: UICallbacks) => {
     try {
-      const result = await this.mockAnchorClient.initializeUser();
+      const result = await this.mockAnchorClient.initializeUser('');
       callbacks.showSuccess?.('ユーザーアカウントが初期化されました！');
       callbacks.updateGameState?.();
       return result;
@@ -323,7 +334,7 @@ export class MockGameService {
         callbacks.showInfo?.('請求可能な報酬がありません');
         return;
       }
-      const result = await this.mockAnchorClient.claimReward();
+      const result = await this.mockAnchorClient.claimReward('');
       callbacks.showSuccess?.(`${rewards.toFixed(2)} WEEDを獲得しました！`);
       callbacks.updateGameState?.();
       return result;
@@ -336,7 +347,7 @@ export class MockGameService {
   // Seed operations
   purchaseMysteryPack = vi.fn().mockImplementation(async (callbacks: UICallbacks) => {
     try {
-      const result = await this.mockAnchorClient.purchaseSeedPack();
+      const result = await this.mockAnchorClient.purchaseSeedPack('');
       callbacks.showSuccess?.('ミステリーパックを購入しました！');
       callbacks.updateGameState?.();
       return result;

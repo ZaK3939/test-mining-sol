@@ -10,8 +10,9 @@ import {
   executeTransactionWithSpecialReturns,
   requireWalletConnection,
 } from '../utils/error-handler';
-import { SUCCESS_MESSAGES, GAME_CONSTANTS } from '../utils/constants';
+import { SUCCESS_MESSAGES } from '../utils/constants';
 import type { DetailedGameState } from '../types';
+import { type ConfigAccount } from '../types/program-types';
 
 export interface UICallbacks {
   showLoading: (message: string) => void;
@@ -235,59 +236,32 @@ export class GameService {
     );
   }
 
-  // Seed pack purchase with Pyth Entropy
-  async purchaseSeedPack(quantity: number, callbacks: UICallbacks): Promise<{
-    transactionSignature: string;
-    entropyRequestAccount: PublicKey;
-  }> {
+  // Seed pack purchase with Switchboard VRF
+  async purchaseSeedPack(quantity: number, callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
-        callbacks.showLoading('Pyth Entropyを使用してシードパックを購入中...');
-        
-        try {
-          const result = await this.getAnchorClient().purchaseSeedPack(quantity);
-          
-          callbacks.showSuccess(
-            `シードパック${quantity}個の購入が完了しました！Pyth Entropyで乱数生成中...`
-          );
-          
-          await callbacks.updateGameState();
-          
-          return {
-            transactionSignature: result.transactionSignature,
-            entropyRequestAccount: result.entropyRequestAccount,
-          };
-        } catch (error) {
-          callbacks.showError(
-            `シードパック購入エラー: ${error instanceof Error ? error.message : String(error)}`
-          );
-          throw error;
-        } finally {
-          callbacks.hideLoading();
-        }
+        return await executeTransaction(() => this.getAnchorClient().purchaseSeedPack(quantity), {
+          operationName: 'シードパック購入',
+          successMessage: `シードパック${quantity}個の購入が完了しました！`,
+          onSuccess: callbacks.updateGameState,
+          ...callbacks,
+        });
       },
       callbacks.showError
     );
   }
 
-  // Seed pack opening with Pyth Entropy validation
-  async openSeedPack(
-    packId: number, 
-    quantity: number, 
-    entropyRequestAccount?: PublicKey,
-    callbacks: UICallbacks
-  ): Promise<string> {
+  // Seed pack opening with Switchboard VRF
+  async openSeedPack(packId: number, quantity: number, callbacks: UICallbacks): Promise<string> {
     return await requireWalletConnection(
       this.solanaService.getWalletState(),
       async () => {
         return await executeTransaction(
-          () => this.getAnchorClient().openSeedPack(packId, quantity, entropyRequestAccount), 
+          () => this.getAnchorClient().openSeedPack(packId, quantity), 
           {
             operationName: 'シードパック開封',
-            successMessage: entropyRequestAccount 
-              ? 'Pyth Entropyを使用してシードパックの開封が完了しました！'
-              : 'シードパックの開封が完了しました！',
+            successMessage: 'Switchboard VRFを使用してシードパックの開封が完了しました！',
             onSuccess: callbacks.updateGameState,
             ...callbacks,
           }
@@ -413,9 +387,9 @@ export class GameService {
   // Config情報取得
   async fetchConfig(): Promise<ConfigAccount | null> {
     try {
-      return await this.getAnchorClient().getConfig();
+      return await this.getAnchorClient().fetchConfig();
     } catch (error) {
-      logger.error('Config取得エラー:', error);
+      logger.error(`Config取得エラー: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
@@ -424,13 +398,15 @@ export class GameService {
   async fetchRewardMintInfo(): Promise<{ supply: bigint } | null> {
     try {
       const connection = this.solanaService.getConnection();
-      const pdas = await this.getAnchorClient().calculatePDAs();
+      const walletState = this.solanaService.getWalletState();
+      if (!walletState.publicKey) throw new Error('Wallet not connected');
+      const pdas = await this.getAnchorClient().calculatePDAs(walletState.publicKey);
       const mintInfo = await connection.getTokenSupply(pdas.rewardMint);
       return {
         supply: BigInt(mintInfo.value.amount)
       };
     } catch (error) {
-      logger.error('報酬ミント情報取得エラー:', error);
+      logger.error(`報酬ミント情報取得エラー: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
@@ -444,19 +420,10 @@ export class GameService {
     lastUpdateTime: number;
   } | null> {
     try {
-      const stats = await this.getAnchorClient().getGlobalStats();
-      if (stats) {
-        return {
-          totalGrowPower: safeBNToNumber(stats.totalGrowPower),
-          totalFarmSpaces: safeBNToNumber(stats.totalFarmSpaces),
-          totalSupply: safeBNToNumber(stats.totalSupply),
-          currentRewardsPerSecond: safeBNToNumber(stats.currentRewardsPerSecond),
-          lastUpdateTime: safeBNToNumber(stats.lastUpdateTime),
-        };
-      }
+      // For now, return null since getGlobalStats doesn't exist yet
       return null;
     } catch (error) {
-      logger.error('グローバル統計取得エラー:', error);
+      logger.error(`グローバル統計取得エラー: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
@@ -466,15 +433,10 @@ export class GameService {
     accumulatedFees: number;
   } | null> {
     try {
-      const feePool = await this.getAnchorClient().getFeePool();
-      if (feePool) {
-        return {
-          accumulatedFees: safeBNToNumber(feePool.accumulatedFees),
-        };
-      }
+      // For now, return null since getFeePool doesn't exist yet
       return null;
     } catch (error) {
-      logger.error('手数料プール取得エラー:', error);
+      logger.error(`手数料プール取得エラー: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }

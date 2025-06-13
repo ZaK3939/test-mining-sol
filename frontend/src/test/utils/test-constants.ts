@@ -56,10 +56,11 @@ export const TEST_CONSTANTS = {
 
   // テストデータ
   TEST_DATA: {
-    FACILITY_COST: 1000, // 施設コスト（仮想値）
-    MYSTERY_BOX_COST: 100, // ミステリーボックスコスト（仮想値）
-    MACHINE_COST: 50, // マシンコスト（仮想値）
-    UPGRADE_COST: 200, // アップグレードコスト（仮想値）
+    FARM_SPACE_COST_SOL: 0.5, // 農場スペースコスト（SOL）
+    SEED_PACK_COST: 300, // シードパックコスト（WEED）
+    HALVING_INTERVAL: 200, // 半減期間隔（秒）
+    TOTAL_SUPPLY: 240_000_000, // 総供給量（WEED）
+    BASE_RATE: 200, // 基本報酬レート（WEED/秒）
   },
 
   // エラー設定
@@ -83,9 +84,9 @@ export const TEST_CONSTANTS = {
   // プログラム ID 設定
   PROGRAM_IDS: {
     // 実際のデプロイ済みプログラムID
-    EXPECTED: 'FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B',
-    CONFIG_FILE: '7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB', // config.tsの設定
-    LEGACY: 'EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89',
+    EXPECTED: '7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB',
+    LEGACY_OLD: 'FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B',
+    LEGACY_OLDER: 'EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89',
   },
 } as const;
 

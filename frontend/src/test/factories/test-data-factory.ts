@@ -4,7 +4,16 @@
  */
 
 import { Keypair, PublicKey } from '@solana/web3.js';
-import type { SeedType, UserStateType, FarmSpaceType } from '../../types/program-types';
+// import type { SeedType } from '../../types/program-types';
+
+// Temporary seed type definition
+enum SeedType {
+  Common = 1,
+  Uncommon = 2,
+  Rare = 3,
+  Epic = 4,
+  Legendary = 5,
+}
 
 // =============== USER DATA FACTORIES ===============
 
@@ -13,6 +22,7 @@ export interface TestUser {
   publicKey: PublicKey;
   name: string;
   index: number;
+  referrer?: PublicKey;
 }
 
 export interface TestUserState {
@@ -150,7 +160,7 @@ export class TestDataFactory {
   }
 
   static createSeedCollection(owner: PublicKey, count: number = 5): TestSeed[] {
-    return Array.from({ length: count }, (_, i) => {
+    return Array.from({ length: count }, () => {
       // Create a mix of seed types with weighted distribution
       const seedType = this.generateRandomSeedType();
       return this.createSeed(seedType, { owner });

@@ -116,14 +116,14 @@ export class BatchFetcher {
     _userPublicKey: PublicKey,
     pdas: {
       userState: PublicKey;
-      facility: PublicKey;
+      farmSpace: PublicKey;
       config: PublicKey;
       rewardMint: PublicKey;
     }
   ): BatchRequest[] {
     return [
       { address: pdas.userState, name: 'userState' },
-      { address: pdas.facility, name: 'facility' },
+      { address: pdas.farmSpace, name: 'farmSpace' },
       { address: pdas.config, name: 'config' },
       { address: pdas.rewardMint, name: 'rewardMint' },
     ];

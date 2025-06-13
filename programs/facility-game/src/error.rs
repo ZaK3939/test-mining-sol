@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 #[error_code]
+#[derive(PartialEq)]
 pub enum GameError {
     #[msg("User already has a farm")]
     AlreadyHasFarm,
@@ -147,6 +148,13 @@ pub enum GameError {
     #[msg("Invite code is inactive")]
     InviteCodeInactive,
     
+    // Security-related errors
+    #[msg("Unauthorized operator access")]
+    UnauthorizedOperator,
+    
+    #[msg("Pending referral rewards limit exceeded")]
+    PendingRewardsLimitExceeded,
+    
     // VRF-related errors
     #[msg("VRF account is required for Switchboard VRF method")]
     VrfAccountRequired,
@@ -177,4 +185,7 @@ pub enum GameError {
     
     #[msg("Invalid salt for hash generation")]
     InvalidSalt,
+    
+    #[msg("Invalid ownership - account does not belong to user")]
+    InvalidOwnership,
 }

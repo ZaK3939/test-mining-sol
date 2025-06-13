@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Transfer, TokenAccount, Mint};
-use anchor_spl::token_2022::{self as token_2022, Token2022, MintTo};
+use anchor_spl::token_2022::{self as token_2022, Token2022, MintTo, TransferChecked};
 use crate::state::*;
 use crate::error::*;
 use anchor_lang::solana_program::hash::hash;
@@ -18,22 +18,24 @@ pub use crate::validation::{
 
 // ===== TOKEN TRANSFER HELPERS =====
 
-/// Transfer tokens between accounts using CPI
+/// Transfer tokens between accounts using CPI with transfer fee support
 pub fn transfer_tokens_with_cpi<'info>(
     from: &Account<'info, TokenAccount>,
     to: &Account<'info, TokenAccount>,
+    mint: &Account<'info, Mint>,
     authority: &Signer<'info>,
     token_program: &Program<'info, Token2022>,
     amount: u64,
 ) -> Result<()> {
-    let transfer_accounts = Transfer {
+    let transfer_accounts = TransferChecked {
         from: from.to_account_info(),
+        mint: mint.to_account_info(),
         to: to.to_account_info(),
         authority: authority.to_account_info(),
     };
     
     let cpi_ctx = CpiContext::new(token_program.to_account_info(), transfer_accounts);
-    token::transfer(cpi_ctx, amount)
+    token_2022::transfer_checked(cpi_ctx, amount, 6) // 6 decimals for WEED
 }
 
 /// Transfer SOL using system program
@@ -74,8 +76,7 @@ pub fn calculate_referral_reward(base_reward: u64) -> Result<u64> {
 // Delegate to economics module for advanced calculation functions
 pub use crate::economics::{calculate_user_share_reward as calculate_user_share_of_global_rewards, calculate_rewards_across_halving as calculate_user_rewards_across_halving};
 
-// Delegate to economics module for upgrade cost calculation
-pub use crate::economics::get_upgrade_cost as get_upgrade_cost_for_level;
+// Note: Manual upgrade functions removed - now using auto-upgrade system
 
 // Delegate to economics module for halving mechanism
 pub use crate::economics::check_and_apply_halving;
@@ -111,14 +112,18 @@ pub fn calculate_reward_percentages(
         // Both levels, Level 1 protocol, Level 2 protocol: User gets 100% (all protocol shares return)
         (true, true, true, true) => (10000, 0, 0),
         
-        // Both levels, Level 1 protocol, Level 2 regular: User gets 95% (L1 returns), Level 2 gets 5%
-        (true, true, true, false) => (9500, 0, 500),
+        // NOTE: Case (true, true, true, false) is logically impossible:
+        // If Level 1 is protocol, it cannot have referred Level 2 (protocol doesn't invite users)
+        // This case should never occur in practice
         
         // Both levels, Level 1 regular, Level 2 protocol: User gets 90% (L2 returns), Level 1 gets 10%
         (true, true, false, true) => (9000, 1000, 0),
         
         // Both levels, both regular: User gets 85%, Level 1 gets 10%, Level 2 gets 5%
         (true, true, false, false) => (8500, 1000, 500),
+        
+        // Fallback for impossible case - return everything to user
+        _ => (10000, 0, 0),
     }
 }
 
@@ -245,42 +250,6 @@ pub fn initialize_seed_storage(seed_storage: &mut SeedStorage, owner: Pubkey) {
     seed_storage.reserve = [0; 16];
 }
 
-/// Generate entropy request key for Pyth Entropy
-/// This derives the PDA for entropy request accounts
-pub fn derive_entropy_request_key(
-    user: Pubkey,
-    sequence: u64,
-    pyth_entropy_program: Pubkey,
-) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[
-            b"entropy_request",
-            user.as_ref(),
-            &sequence.to_le_bytes(),
-        ],
-        &pyth_entropy_program,
-    )
-}
-
-/// Validate entropy request account
-/// Ensures the account belongs to the correct program and user
-pub fn validate_entropy_request_account(
-    entropy_request: &UncheckedAccount,
-    expected_owner: Pubkey,
-    _user: Pubkey,
-    _sequence: u64,
-) -> Result<()> {
-    // Check owner
-    require!(
-        *entropy_request.owner == expected_owner,
-        crate::error::GameError::InvalidEntropyAccount
-    );
-    
-    // Additional validation can be added here
-    // such as checking the account data format
-    
-    Ok(())
-}
 
 /// Add seed to user's storage with type tracking and auto-discard
 pub fn add_seed_to_storage(
@@ -370,19 +339,17 @@ pub fn generate_invite_code_hash(
     hash(&data).to_bytes()
 }
 
-/// Generate a cryptographically secure random salt
-/// Uses current clock timestamp and slot for randomness
-pub fn generate_random_salt() -> Result<[u8; 16]> {
-    let clock = Clock::get()?;
-    let seed_data = [
-        clock.unix_timestamp.to_le_bytes(),
-        clock.slot.to_le_bytes(),
-    ].concat();
-    
-    let hash_result = hash(&seed_data);
-    let mut salt = [0u8; 16];
-    salt.copy_from_slice(&hash_result.to_bytes()[0..16]);
-    Ok(salt)
+/// Get fixed salt for invite code hashing
+/// Using a fixed salt simplifies PDA calculation and doesn't compromise security
+/// since the salt is not meant to be secret in this design
+pub fn get_fixed_salt() -> [u8; 16] {
+    // Fixed salt for invite codes - this makes PDA calculation predictable
+    // Security note: This is intentional to simplify the invite system
+    // The actual security comes from the hash verification, not salt secrecy
+    [
+        0x46, 0x41, 0x43, 0x49, 0x4c, 0x49, 0x54, 0x59,  // "FACILITY"
+        0x47, 0x41, 0x4d, 0x45, 0x32, 0x30, 0x32, 0x34,  // "GAME2024"
+    ]
 }
 
 /// Validate invite code format (8 alphanumeric characters)

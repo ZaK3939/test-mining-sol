@@ -224,28 +224,23 @@ export class TestScenarioFactory {
   }
 
   /**
-   * Buy mystery pack for user
-   * TODO: Implement when entropy provider PDAs are properly set up
+   * Buy seed pack for user with Switchboard VRF
    */
-  async buyMysteryPack(_user: TestUser, _quantity: number = 1): Promise<string> {
-    throw new Error("buyMysteryPack not yet implemented - requires entropy provider setup");
-    // return await this.testEnv.program.methods
-    //   .purchaseSeedPack(quantity, new anchor.BN(Date.now()))
-    //   .accountsPartial({
-    //     userState: user.userStatePda,
-    //     config: this.testEnv.pdas.configPda,
-    //     seedPack: user.seedPackPda,
-    //     rewardMint: this.testEnv.pdas.rewardMintPda,
-    //     userTokenAccount: user.tokenAccount,
-    //     entropyProvider: this.testEnv.pdas.entropyProvider,
-    //     entropyRequest: user.entropyRequest,
-    //     user: user.keypair.publicKey,
-    //     pythEntropyProgram: this.testEnv.pdas.pythEntropyProgram,
-    //     tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
-    //     systemProgram: anchor.web3.SystemProgram.programId,
-    //   })
-    //   .signers([user.keypair])
-    //   .rpc();
+  async buySeedPack(user: TestUser, quantity: number = 1): Promise<string> {
+    return await this.testEnv.program.methods
+      .purchaseSeedPack(quantity, new anchor.BN(Date.now()), new anchor.BN(1000000)) // max VRF fee
+      .accountsPartial({
+        userState: user.userStatePda,
+        config: this.testEnv.pdas.configPda,
+        seedPack: user.seedPackPda,
+        rewardMint: this.testEnv.pdas.rewardMintPda,
+        userTokenAccount: user.tokenAccount,
+        user: user.keypair.publicKey,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([user.keypair])
+      .rpc();
   }
 }
 
@@ -254,9 +249,9 @@ export class TestScenarioFactory {
  */
 export const TEST_CONSTANTS = {
   BASE_RATE: 100,
-  HALVING_INTERVAL: 6 * 24 * 60 * 60, // 6 days
+  HALVING_INTERVAL: 200, // 200 seconds
   SEED_PACK_COST: 300_000_000, // 300 WEED with 6 decimals
-  FIXED_SUPPLY_CAP: 120_000_000_000_000, // 120M WEED with 6 decimals
+  FIXED_SUPPLY_CAP: 240_000_000_000_000, // 240M WEED with 6 decimals
   DEFAULT_GROW_POWER: 100,
   FARM_SPACE_LEVELS: {
     1: { capacity: 4, upgradeCost: 0 },

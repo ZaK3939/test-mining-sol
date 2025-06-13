@@ -254,6 +254,7 @@ beforeAll(() => {
 
 // Global test utilities available in all tests
 declare global {
+  // eslint-disable-next-line no-var
   var testUtils: {
     waitForNextTick: () => Promise<void>;
     flushPromises: () => Promise<void>;

@@ -1,16 +1,22 @@
-# Solana Facility Game MVP
+# Solana Facility Game
 
-An MVP (Minimum Viable Product) of a facility management game running on the Solana blockchain. Implemented using the Anchor framework.
+An agricultural simulation game built on Solana with time-based rewards, facility management, and SPL token economics.
 
-## Main Features
+## 📚 Documentation
 
-### Phase 1: MVP Features
+- **[System Overview](./docs/overview.md)** - Complete technical specification
+- **[Probability Management](./docs/PROBABILITY_TABLE_MANAGEMENT.md)** - Dynamic probability table updates
+- **[Farm Level Design](./docs/FARM_LEVEL_EXTENSION_DESIGN.md)** - Farm level extension design
+- **[Invite System](./docs/SIMPLIFIED_INVITE_SYSTEM.md)** - Simplified invite system
+- **[All Documentation](./docs/README.md)** - Full documentation index
 
-1. **Facility Purchase System** - One facility per user, automatic initial machine placement
-2. **Grow Power & Lazy Calculation** - Reward accumulation system based on time elapsed
-3. **Claim Rewards** - Receive rewards as SPL tokens
-4. **Halving System** - Periodic reward rate reduction mechanism
-5. **PDA Design** - Extensible account structure for future expansion
+## Core Features
+
+1. **Facility Purchase** - One facility per user with automatic machine placement
+2. **Time-based Rewards** - Lazy calculation system based on elapsed time and grow power
+3. **SPL Token Claims** - Mint and claim rewards as SPL tokens
+4. **Halving Mechanism** - Periodic reward rate reduction
+5. **Extensible Architecture** - PDA design with reserved space for future features
 
 ## Architecture
 
@@ -29,56 +35,16 @@ An MVP (Minimum Viable Product) of a facility management game running on the Sol
 4. `buy_facility` - Purchase facility + initial machine placement
 5. `claim_reward` - Claim rewards (time calculation + token mint)
 
-## Setup Instructions
+## Quick Start
 
-### 1. Install Required Tools
+### Prerequisites
 
-```bash
-# Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
+- [Rust](https://rustup.rs/)
+- [Solana CLI](https://docs.solana.com/cli/install-solana-cli-tools)
+- [Anchor CLI](https://www.anchor-lang.com/docs/installation)
+- [Node.js](https://nodejs.org/) and Yarn
 
-# Solana CLI
-sh -c "$(curl -sSfL https://release.solana.com/v1.17.0/install)"
-
-# Anchor CLI
-cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-avm install latest
-avm use latest
-
-# Node.js dependencies
-npm install -g yarn
-```
-
-### 2. Initialize Project
-
-```bash
-# Create a new Anchor project
-anchor init facility-game --no-git
-cd facility-game
-
-# Place the provided files in their corresponding locations
-```
-
-### 3. File Structure
-
-```
-facility-game/
-├── programs/facility-game/src/
-│   ├── lib.rs              # Main program
-│   ├── state.rs            # Account structures
-│   ├── instructions/
-│   │   └── mod.rs          # Instruction contexts
-│   └── error.rs            # Error definitions
-├── tests/
-│   └── facility-game.ts    # Test file
-├── Anchor.toml             # Anchor configuration
-├── Cargo.toml              # Rust dependencies
-├── package.json            # Node.js configuration
-└── tsconfig.json           # TypeScript configuration
-```
-
-### 4. Build and Test
+### Development Setup
 
 ```bash
 # Install dependencies
@@ -87,150 +53,66 @@ yarn install
 # Build program
 anchor build
 
-# Start local validator (in separate terminal)
+# Start local validator (separate terminal)
 solana-test-validator
 
 # Run tests
 anchor test --skip-local-validator
 ```
 
-### 5. Configure Environment Variables (Optional)
+### Deploy to Devnet
 
 ```bash
-# Copy example environment file
-cp .env.example .env.local
-
-# Edit .env.local and add your API keys
-# HELIUS_API_KEY_DEVNET=your_actual_api_key_here
-```
-
-### 6. Deploy
-
-```bash
-# Switch to Devnet
+# Configure for devnet
 solana config set --url devnet
-
-# Airdrop (Devnet)
 solana airdrop 2
 
-# Deploy to Devnet
+# Deploy
 anchor deploy --provider.cluster devnet
-
-# Or with custom RPC (using environment variable)
-HELIUS_API_KEY_DEVNET=your_api_key anchor deploy --provider.cluster devnet
 ```
 
-## Usage Examples
+## Technical Details
 
-### 1. System Initialization (Admin)
-
-```bash
-# Initialize Config (base rate: 10, halving period: 1 year)
-anchor run initialize-config
+### Reward Formula
 ```
-
-### 2. User Flow
-
-```typescript
-// 1. Initialize user
-await program.methods.initUser().accounts({...}).rpc();
-
-// 2. Purchase facility
-await program.methods.buyFacility().accounts({...}).rpc();
-
-// 3. After time elapsed, claim rewards
-await program.methods.claimReward().accounts({...}).rpc();
+Reward = (Elapsed Time × Grow Power × Base Rate) / 1000
 ```
-
-## Technical Specifications
-
-### Reward Calculation Formula
-
-```
-Reward = (Elapsed Time[seconds] × Grow Power × base_rate) / 1000
-```
-
-### Halving
-
-- `base_rate` halves at each configured interval
-- Default: 1 year interval
 
 ### PDA Seeds
-
 - Config: `["config"]`
 - UserState: `["user", user_pubkey]`
 - Facility: `["facility", user_pubkey]`
 - RewardMint: `["reward_mint"]`
 - MintAuthority: `["mint_authority"]`
 
-## Future Expansion Plans
+### Key Constants
+- Initial grow power: 100
+- Default halving interval: 1 year
+- Program ID: `EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89`
 
-### Phase 2 Planned Features
+## Development
 
-- Multiple machine types
-- Machine upgrade system
-- Referral reward system
-- Multiple facility ownership
-
-### Extensible Design
-
-- 64-byte `reserve` field in each account
-- Secure account management through PDA structure
-- Modular instruction design
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Build Error**: Check Anchor version
-2. **Test Failure**: Ensure Solana Test Validator is running
-3. **Deploy Error**: Check sufficient SOL balance
-
-### Debugging Methods
-
+### Common Commands
 ```bash
-# Check logs
+# Build program
+anchor build
+
+# Run all tests
+anchor test
+
+# Run tests without validator restart
+anchor test --skip-local-validator
+
+# Deploy to devnet
+anchor deploy --provider.cluster devnet
+
+# Check program logs
 solana logs
-
-# Check account state
-solana account <PDA_ADDRESS>
-
-# Program logs
-anchor test --skip-deploy -- --grep "test_name"
 ```
 
-## Security Guidelines
-
-### ⚠️ 重要なセキュリティ注意事項
-
-1. **秘密鍵ファイルの保護**
-
-   - `deploy-keypair.json` や `*.json` キーペアファイルは絶対に公開しない
-   - `.gitignore` に含まれていることを確認
-   - Github 等のパブリックリポジトリにコミットしない
-
-2. **API キーの管理**
-
-   - Helius 等の API キーは環境変数を使用
-   - `.env.local` ファイルは `.gitignore` に含める
-   - 本番環境では適切なシークレット管理サービスを使用
-
-3. **ウォレット管理**
-   - 本番用ウォレットとテスト用ウォレットを分離
-   - Devnet でのテストには専用ウォレットを使用
-   - Mainnet デプロイ前に十分なテストを実施
-
-### セキュリティチェックリスト
-
-- [ ] `.gitignore` に秘密鍵ファイルが含まれている
-- [ ] API キーが環境変数で管理されている
-- [ ] 本番用とテスト用のウォレットが分離されている
-- [ ] パブリックリポジトリに機密情報が含まれていない
-
-## memo
-
-https://squads.xyz/squads-multisig
+### Testing
+Tests follow the complete user journey from system initialization through reward claims. See `/tests/` for comprehensive test examples.
 
 ## License
 
-MIT License# test-mining-sol
+MIT License

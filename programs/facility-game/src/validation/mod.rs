@@ -1,18 +1,27 @@
 /// Validation module for game logic
-/// Modular validation functions organized by domain
+/// Refactored for better organization and performance
 
-// Submodules for organized validation functions
+// Core validation modules organized by domain
+pub mod common;
 pub mod user_validation;
 pub mod economic_validation;
 pub mod time_validation;
 pub mod game_validation;
 pub mod admin_validation;
-pub mod common;
 
-// Re-export common validations as the primary interface
-pub use common::*;
+// Re-export common utilities and optimized functions
+pub use common::{
+    HasOwner, 
+    validate_ownership,
+    validate_user_action_requirements,
+    validate_reward_claim_optimized,
+    validate_token_balance,
+    validate_non_zero_amount,
+    validate_quantity_range,
+    validate_batch_size,
+};
 
-// Re-export domain-specific validations with namespacing to avoid conflicts
+// Namespace exports for organized access to domain-specific validations
 pub mod user {
     pub use super::user_validation::*;
 }
@@ -32,3 +41,9 @@ pub mod game {
 pub mod admin {
     pub use super::admin_validation::*;
 }
+
+// Convenience re-exports for commonly used validations
+pub use user_validation::{validate_user_ownership, validate_has_farm_space, validate_has_grow_power};
+pub use game_validation::{validate_seed_ownership, validate_farm_space_ownership};
+pub use economic_validation::{validate_sufficient_balance, validate_supply_cap};
+pub use time_validation::{validate_claim_interval, validate_timestamp_not_future};

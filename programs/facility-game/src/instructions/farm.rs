@@ -3,8 +3,7 @@
 // 農場スペースはユーザーが種を植えて報酬を得るための基本単位です
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, Mint, TokenAccount};
-use anchor_spl::token_2022::Token2022;
+// Note: Token imports removed since manual upgrade functions were removed
 use crate::state::*;
 use crate::error::*;
 use crate::utils::*;
@@ -75,44 +74,8 @@ pub struct BuyFarmSpace<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Context for upgrading farm space
-#[derive(Accounts)]
-pub struct UpgradeFarmSpace<'info> {
-    #[account(
-        mut,
-        seeds = [b"user", user.key().as_ref()],
-        bump,
-        constraint = user_state.has_farm_space @ GameError::NoFarmSpace
-    )]
-    pub user_state: Account<'info, UserState>,
-    
-    #[account(
-        mut,
-        seeds = [b"farm_space", user.key().as_ref()],
-        bump,
-        constraint = farm_space.owner == user.key()
-    )]
-    pub farm_space: Account<'info, FarmSpace>,
-    
-    #[account(
-        mut,
-        seeds = [b"reward_mint"],
-        bump
-    )]
-    pub reward_mint: Account<'info, Mint>,
-    
-    #[account(
-        mut,
-        constraint = user_token_account.owner == user.key(),
-        constraint = user_token_account.mint == reward_mint.key()
-    )]
-    pub user_token_account: Account<'info, TokenAccount>,
-    
-    #[account(mut)]
-    pub user: Signer<'info>,
-    
-    pub token_program: Program<'info, Token2022>,
-}
+// Manual farm upgrades have been replaced with automatic pack-based upgrades
+// See purchase_seed_pack instruction in seeds.rs for auto-upgrade implementation
 
 /// Purchase farm space (Level 1)
 /// Cost: 0.5 SOL + Seed 1 (100 Grow Power) gifted
@@ -171,57 +134,236 @@ pub fn buy_farm_space(ctx: Context<BuyFarmSpace>) -> Result<()> {
     Ok(())
 }
 
-/// Upgrade farm space instantly (no cooldown)
-pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
-    let user_token_account = &ctx.accounts.user_token_account;
+// ===== FARM LEVEL MANAGEMENT =====
+
+/// Context for initializing farm level configuration
+#[derive(Accounts)]
+pub struct InitializeFarmLevelConfig<'info> {
+    #[account(
+        init,
+        payer = admin,
+        space = FarmLevelConfig::DEFAULT_SPACE,
+        seeds = [b"farm_level_config"],
+        bump
+    )]
+    pub farm_level_config: Account<'info, FarmLevelConfig>,
     
-    // Validate upgrade prerequisites
-    validate_upgrade_prerequisites(&ctx.accounts.farm_space)?;
+    #[account(
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
     
-    // Get upgrade cost using helper function
-    let upgrade_cost = get_upgrade_cost_for_level(ctx.accounts.farm_space.level)?;
+    #[account(mut)]
+    pub admin: Signer<'info>,
     
-    // Validate user has sufficient tokens
-    validate_token_balance(user_token_account, upgrade_cost)?;
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for updating farm level configuration
+#[derive(Accounts)]
+pub struct UpdateFarmLevelConfig<'info> {
+    #[account(
+        mut,
+        seeds = [b"farm_level_config"],
+        bump
+    )]
+    pub farm_level_config: Account<'info, FarmLevelConfig>,
     
-    // Burn tokens for upgrade payment
-    burn_upgrade_payment(&ctx, upgrade_cost)?;
+    #[account(
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
     
-    // Perform instant upgrade
-    let farm_space = &mut ctx.accounts.farm_space;
-    let old_level = farm_space.level;
-    let old_capacity = farm_space.capacity;
+    #[account(mut)]
+    pub admin: Signer<'info>,
+}
+
+/// Context for migrating existing farms to new level system
+#[derive(Accounts)]
+pub struct MigrateFarmToNewLevels<'info> {
+    #[account(
+        mut,
+        seeds = [b"farm_space", user.key().as_ref()],
+        bump,
+        constraint = farm_space.owner == user.key() @ GameError::UnauthorizedUser
+    )]
+    pub farm_space: Account<'info, FarmSpace>,
     
-    farm_space.level += 1;
-    farm_space.capacity = FarmSpace::get_capacity_for_level(farm_space.level);
+    #[account(
+        seeds = [b"farm_level_config"],
+        bump
+    )]
+    pub farm_level_config: Account<'info, FarmLevelConfig>,
     
-    msg!("Farm space upgraded instantly for user: {}, from level {} to {}, capacity increased from {} to {} seeds, cost: {} tokens", 
-         ctx.accounts.user.key(), 
-         old_level, 
-         farm_space.level,
-         old_capacity,
-         farm_space.capacity,
-         upgrade_cost);
+    #[account(mut)]
+    pub user: Signer<'info>,
+}
+
+/// Context for viewing farm level configuration
+#[derive(Accounts)]
+pub struct ViewFarmLevelConfig<'info> {
+    #[account(
+        seeds = [b"farm_level_config"],
+        bump
+    )]
+    pub farm_level_config: Account<'info, FarmLevelConfig>,
+}
+
+/// Initialize farm level configuration with defaults
+pub fn initialize_farm_level_config(ctx: Context<InitializeFarmLevelConfig>) -> Result<()> {
+    let config = &mut ctx.accounts.farm_level_config;
+    
+    // Initialize with current 5-level system
+    config.max_level = 5;
+    config.capacities = vec![4, 6, 8, 10, 12];
+    config.upgrade_thresholds = vec![0, 30, 100, 300, 500];
+    config.level_names = vec![
+        "Starter Farm".to_string(),
+        "Growing Farm".to_string(),
+        "Expanding Farm".to_string(),
+        "Advanced Farm".to_string(),
+        "Master Farm".to_string(),
+    ];
+    config.created_at = Clock::get()?.unix_timestamp;
+    config.updated_at = Clock::get()?.unix_timestamp;
+    config.reserve = [0; 32];
+    
+    msg!("Farm level config initialized with {} levels", config.max_level);
     Ok(())
 }
 
-/// Validate that farm space can be upgraded
-fn validate_upgrade_prerequisites(farm_space: &FarmSpace) -> Result<()> {
-    require!(farm_space.level < 5, GameError::MaxLevelReached);
+/// Update farm level configuration
+pub fn update_farm_level_config(
+    ctx: Context<UpdateFarmLevelConfig>,
+    max_level: u8,
+    capacities: Vec<u8>,
+    upgrade_thresholds: Vec<u32>,
+    level_names: Option<Vec<String>>,
+) -> Result<()> {
+    let config = &mut ctx.accounts.farm_level_config;
+    
+    // Validation
+    require!(max_level >= 1 && max_level <= 20, GameError::InvalidConfig);
+    require!(capacities.len() == max_level as usize, GameError::InvalidConfig);
+    require!(upgrade_thresholds.len() == max_level as usize, GameError::InvalidConfig);
+    
+    // Validate ascending order for capacities
+    for i in 1..capacities.len() {
+        require!(capacities[i] > capacities[i-1], GameError::InvalidConfig);
+    }
+    
+    // Validate ascending order for thresholds
+    for i in 1..upgrade_thresholds.len() {
+        require!(upgrade_thresholds[i] > upgrade_thresholds[i-1], GameError::InvalidConfig);
+    }
+    
+    // Validate level names if provided
+    if let Some(names) = &level_names {
+        require!(names.len() == max_level as usize, GameError::InvalidConfig);
+        for name in names {
+            require!(name.len() <= 32, GameError::InvalidConfig);
+        }
+    }
+    
+    // Update configuration
+    config.max_level = max_level;
+    config.capacities = capacities;
+    config.upgrade_thresholds = upgrade_thresholds;
+    
+    if let Some(names) = level_names {
+        config.level_names = names;
+    }
+    
+    config.updated_at = Clock::get()?.unix_timestamp;
+    
+    msg!("Farm level config updated: max_level={}", max_level);
     Ok(())
 }
 
-/// Burn tokens for upgrade payment
-fn burn_upgrade_payment(ctx: &Context<UpgradeFarmSpace>, upgrade_cost: u64) -> Result<()> {
-    let burn_accounts = Burn {
-        mint: ctx.accounts.reward_mint.to_account_info(),
-        from: ctx.accounts.user_token_account.to_account_info(),
-        authority: ctx.accounts.user.to_account_info(),
-    };
+/// Migrate existing farms to new level configuration
+pub fn migrate_farm_to_new_levels(ctx: Context<MigrateFarmToNewLevels>) -> Result<()> {
+    let farm = &mut ctx.accounts.farm_space;
+    let level_config = &ctx.accounts.farm_level_config;
     
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let cpi_ctx = CpiContext::new(cpi_program, burn_accounts);
-    token::burn(cpi_ctx, upgrade_cost)
+    let old_level = farm.level;
+    let old_capacity = farm.capacity;
+    
+    // Adjust level if it exceeds new maximum
+    if farm.level > level_config.max_level {
+        farm.level = level_config.max_level;
+    }
+    
+    // Recalculate capacity based on new configuration
+    farm.capacity = FarmSpace::get_capacity_for_level_with_config(farm.level, level_config)?;
+    
+    // If capacity decreased and farm has more seeds than new capacity, need to handle overflow
+    if farm.capacity < old_capacity && farm.seed_count > farm.capacity as u16 {
+        msg!("Warning: Farm capacity reduced from {} to {}. Seed count: {}", 
+             old_capacity, farm.capacity, farm.seed_count);
+        // Note: In production, you might want to:
+        // 1. Move excess seeds to storage
+        // 2. Compensate the user
+        // 3. Or gradually reduce through natural harvest
+    }
+    
+    msg!("Farm migrated: level {} -> {}, capacity {} -> {}", 
+         old_level, farm.level, old_capacity, farm.capacity);
+    
+    Ok(())
 }
 
+/// Return type for level information queries
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct FarmLevelInfo {
+    pub level: u8,
+    pub capacity: u8,
+    pub upgrade_threshold: u32,
+    pub name: String,
+    pub is_max_level: bool,
+    pub next_threshold: Option<u32>,
+}
 
+/// Get current farm level configuration (view function)
+pub fn get_farm_level_info(
+    ctx: Context<ViewFarmLevelConfig>,
+    level: Option<u8>,
+) -> Result<FarmLevelInfo> {
+    let config = &ctx.accounts.farm_level_config;
+    
+    if let Some(l) = level {
+        require!(l >= 1 && l <= config.max_level, GameError::InvalidFarmLevel);
+        
+        let capacity = config.capacities[(l - 1) as usize];
+        let threshold = config.upgrade_thresholds[(l - 1) as usize];
+        let name = config.level_names.get((l - 1) as usize)
+            .map(|s| s.clone())
+            .unwrap_or_else(|| format!("Level {}", l));
+        
+        Ok(FarmLevelInfo {
+            level: l,
+            capacity,
+            upgrade_threshold: threshold,
+            name,
+            is_max_level: l == config.max_level,
+            next_threshold: if l < config.max_level {
+                Some(config.upgrade_thresholds[l as usize])
+            } else {
+                None
+            },
+        })
+    } else {
+        // Return summary info
+        Ok(FarmLevelInfo {
+            level: 0, // Indicates summary
+            capacity: config.capacities[config.capacities.len() - 1], // Max capacity
+            upgrade_threshold: 0,
+            name: format!("Farm System ({} levels)", config.max_level),
+            is_max_level: false,
+            next_threshold: None,
+        })
+    }
+}

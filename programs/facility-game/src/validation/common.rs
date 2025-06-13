@@ -8,23 +8,39 @@ use crate::error::GameError;
 use crate::constants::*;
 
 // ===== OWNERSHIP VALIDATIONS =====
+// Note: Specific ownership validations moved to their respective domain modules
+// - validate_user_ownership -> user_validation.rs
+// - validate_seed_ownership -> game_validation.rs  
+// - validate_farm_space_ownership -> game_validation.rs
 
-/// Validate user ownership of account
-pub fn validate_user_ownership(user_state: &UserState, expected_owner: Pubkey) -> Result<()> {
-    require!(user_state.owner == expected_owner, GameError::Unauthorized);
+/// Generic ownership validation for any structure with an owner field
+pub fn validate_ownership<T>(account: &T, expected_owner: Pubkey, error: GameError) -> Result<()>
+where
+    T: HasOwner,
+{
+    require!(account.get_owner() == expected_owner, error);
     Ok(())
 }
 
-/// Validate seed ownership
-pub fn validate_seed_ownership(seed: &Seed, expected_owner: Pubkey) -> Result<()> {
-    require!(seed.owner == expected_owner, GameError::NotSeedOwner);
-    Ok(())
+/// Trait for structs that have an owner field
+pub trait HasOwner {
+    fn get_owner(&self) -> Pubkey;
 }
 
-/// Validate farm space ownership
-pub fn validate_farm_space_ownership(farm_space: &FarmSpace, expected_owner: Pubkey) -> Result<()> {
-    require!(farm_space.owner == expected_owner, GameError::Unauthorized);
-    Ok(())
+impl HasOwner for UserState {
+    fn get_owner(&self) -> Pubkey { self.owner }
+}
+
+impl HasOwner for Seed {
+    fn get_owner(&self) -> Pubkey { self.owner }
+}
+
+impl HasOwner for FarmSpace {
+    fn get_owner(&self) -> Pubkey { self.owner }
+}
+
+impl HasOwner for SeedStorage {
+    fn get_owner(&self) -> Pubkey { self.owner }
 }
 
 // ===== BALANCE AND CAPACITY VALIDATIONS =====
@@ -55,29 +71,8 @@ pub fn validate_capacity_requirement(current: u8, max: u8, adding: u8) -> Result
 
 // ===== USER STATE VALIDATIONS =====
 
-/// Validate user has farm space
-pub fn validate_has_farm_space(user_state: &UserState) -> Result<()> {
-    require!(user_state.has_farm_space, GameError::NoFarmSpace);
-    Ok(())
-}
-
-/// Validate user doesn't already have farm space
-pub fn validate_no_farm_space(user_state: &UserState) -> Result<()> {
-    require!(!user_state.has_farm_space, GameError::AlreadyHasFarmSpace);
-    Ok(())
-}
-
-/// Validate user has grow power
-pub fn validate_has_grow_power(user_state: &UserState) -> Result<()> {
-    require!(user_state.total_grow_power > 0, GameError::NoGrowPower);
-    Ok(())
-}
-
-/// Validate user has sufficient grow power
-pub fn validate_sufficient_grow_power(user_state: &UserState, required: u64) -> Result<()> {
-    require!(user_state.total_grow_power >= required, GameError::InsufficientFunds);
-    Ok(())
-}
+// Note: User state validation functions moved to user_validation.rs for better organization
+// Re-exported through module namespacing in mod.rs
 
 // ===== QUANTITY AND RANGE VALIDATIONS =====
 
@@ -105,44 +100,7 @@ pub fn validate_referral_level(level: u8) -> Result<()> {
 }
 
 // ===== SEED VALIDATIONS =====
-
-/// Validate seed is not already planted
-pub fn validate_seed_not_planted(seed: &Seed) -> Result<()> {
-    require!(!seed.is_planted, GameError::SeedAlreadyPlanted);
-    Ok(())
-}
-
-/// Validate seed is planted
-pub fn validate_seed_is_planted(seed: &Seed) -> Result<()> {
-    require!(seed.is_planted, GameError::SeedNotPlanted);
-    Ok(())
-}
-
-/// Validate seed is in specific farm space
-pub fn validate_seed_in_farm_space(seed: &Seed, farm_space_key: Pubkey) -> Result<()> {
-    require!(
-        seed.planted_farm_space == Some(farm_space_key),
-        GameError::SeedNotInThisFarmSpace
-    );
-    Ok(())
-}
-
-/// Validate seed type is valid
-pub fn validate_seed_type(seed_type: &SeedType) -> Result<()> {
-    require!(
-        SeedType::is_valid(*seed_type as u8),
-        GameError::InvalidConfig
-    );
-    Ok(())
-}
-
-// ===== UPGRADE VALIDATIONS =====
-
-/// Validate farm space can be upgraded (instant upgrade)
-pub fn validate_can_upgrade_farm_space(farm_space: &FarmSpace) -> Result<()> {
-    require!(farm_space.level < 5, GameError::MaxLevelReached);
-    Ok(())
-}
+// Note: Seed-specific validations moved to game_validation.rs for better organization
 
 // ===== INVITE CODE VALIDATIONS =====
 
@@ -272,44 +230,39 @@ pub fn validate_unique_items<T: PartialEq>(items: &[T]) -> Result<()> {
     Ok(())
 }
 
-// ===== COMPOSITE VALIDATIONS =====
+// ===== OPTIMIZED COMPOSITE VALIDATIONS =====
 
-/// Validate complete seed planting scenario
-pub fn validate_seed_planting(
-    seed: &Seed,
-    farm_space: &FarmSpace,
-    user: Pubkey,
-) -> Result<()> {
-    validate_seed_ownership(seed, user)?;
-    validate_farm_space_ownership(farm_space, user)?;
-    validate_seed_not_planted(seed)?;
-    validate_farm_space_capacity(farm_space)?;
-    Ok(())
-}
-
-/// Validate complete seed removal scenario
-pub fn validate_seed_removal(
-    seed: &Seed,
-    farm_space: &FarmSpace,
-    user: Pubkey,
-) -> Result<()> {
-    validate_seed_ownership(seed, user)?;
-    validate_farm_space_ownership(farm_space, user)?;
-    validate_seed_is_planted(seed)?;
-    validate_seed_in_farm_space(seed, farm_space.owner)?;
-    Ok(())
-}
-
-/// Validate complete reward claim scenario
-pub fn validate_reward_claim(
+/// Optimized reward claim validation (combines multiple checks for efficiency)
+pub fn validate_reward_claim_optimized(
     user_state: &UserState,
     global_stats: &GlobalStats,
     current_time: i64,
 ) -> Result<()> {
-    validate_has_farm_space(user_state)?;
-    validate_has_grow_power(user_state)?;
-    validate_global_grow_power(global_stats)?;
-    validate_claim_interval(user_state.last_harvest_time, current_time)?;
+    // Combined checks for better performance
+    require!(
+        user_state.has_farm_space 
+        && user_state.total_grow_power > 0
+        && global_stats.total_grow_power > 0
+        && current_time >= user_state.last_harvest_time + MIN_CLAIM_INTERVAL,
+        GameError::NoRewardToClaim
+    );
+    Ok(())
+}
+
+/// Batch validation for ownership and basic requirements
+pub fn validate_user_action_requirements(
+    user_state: &UserState,
+    expected_owner: Pubkey,
+    requires_farm_space: bool,
+    requires_grow_power: bool,
+) -> Result<()> {
+    // Single combined check for common requirements
+    require!(
+        user_state.owner == expected_owner
+        && (!requires_farm_space || user_state.has_farm_space)
+        && (!requires_grow_power || user_state.total_grow_power > 0),
+        GameError::Unauthorized
+    );
     Ok(())
 }
 

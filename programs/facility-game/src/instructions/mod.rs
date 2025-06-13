@@ -6,7 +6,7 @@
 // 機能別にモジュールを分割
 pub mod admin;
 pub mod user;
-pub mod farm;
+pub mod farm; // Farm operations + level management
 pub mod referral; // 紹介料蓄積・請求システム
 pub mod seeds;
 pub mod invite; // Hash-based invite system

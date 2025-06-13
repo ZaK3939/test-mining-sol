@@ -25,7 +25,11 @@
     "lint": "bunx eslint \"src/**/*.{ts,tsx,js,jsx}\"",
     "lint:fix": "bunx eslint \"src/**/*.{ts,tsx,js,jsx}\" --fix",
     "code-check": "bun run type-check && bun run lint && bun run format:check",
-    "quality-check": "bun run code-check && bun run test:run"
+    "quality-check": "bun run code-check && bun run test:run",
+    "example": "bun run scripts/example.ts",
+    "example:journey": "bun run scripts/example.ts journey",
+    "example:farming": "bun run scripts/example.ts farming",
+    "example:referral": "bun run scripts/example.ts referral"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

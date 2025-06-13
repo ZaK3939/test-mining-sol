@@ -383,3 +383,140 @@ pub fn update_config(
     
     Ok(())
 }
+
+// ===== PROBABILITY TABLE MANAGEMENT =====
+
+/// Context for initializing probability table
+#[derive(Accounts)]
+pub struct InitializeProbabilityTable<'info> {
+    #[account(
+        init,
+        payer = admin,
+        space = ProbabilityTable::LEN,
+        seeds = [b"probability_table"],
+        bump
+    )]
+    pub probability_table: Account<'info, ProbabilityTable>,
+    
+    #[account(
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ crate::error::GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+    
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for updating probability table
+#[derive(Accounts)]
+pub struct UpdateProbabilityTable<'info> {
+    #[account(
+        mut,
+        seeds = [b"probability_table"],
+        bump
+    )]
+    pub probability_table: Account<'info, ProbabilityTable>,
+    
+    #[account(
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ crate::error::GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+    
+    #[account(mut)]
+    pub admin: Signer<'info>,
+}
+
+/// Initialize probability table with Table 1 settings
+pub fn initialize_probability_table(ctx: Context<InitializeProbabilityTable>) -> Result<()> {
+    let probability_table = &mut ctx.accounts.probability_table;
+    let current_time = Clock::get()?.unix_timestamp;
+    
+    // Initialize with Table 1 settings
+    let table_data = ProbabilityTable::init_table_1();
+    
+    // Set each field individually
+    probability_table.version = table_data.version;
+    probability_table.seed_count = table_data.seed_count;
+    probability_table.grow_powers = table_data.grow_powers;
+    probability_table.probability_thresholds = table_data.probability_thresholds;
+    probability_table.probability_percentages = table_data.probability_percentages;
+    probability_table.expected_value = table_data.expected_value;
+    probability_table.name = table_data.name;
+    probability_table.created_at = current_time;
+    probability_table.updated_at = current_time;
+    probability_table.reserve = [0; 32];
+    
+    msg!("Probability table initialized with Table 1 settings (6 seeds)");
+    msg!("Expected value: {} GP per pack", probability_table.expected_value);
+    
+    Ok(())
+}
+
+/// Update probability table with new settings
+pub fn update_probability_table(
+    ctx: Context<UpdateProbabilityTable>,
+    version: u32,
+    seed_count: u8,
+    grow_powers: Vec<u64>,
+    probability_thresholds: Vec<u16>,
+    probability_percentages: Vec<f32>,
+    expected_value: u64,
+    name: String,
+) -> Result<()> {
+    let probability_table = &mut ctx.accounts.probability_table;
+    
+    // Validate input constraints
+    require!(seed_count <= 9, crate::error::GameError::InvalidQuantity);
+    require!(grow_powers.len() == seed_count as usize, crate::error::GameError::InvalidQuantity);
+    require!(probability_thresholds.len() == seed_count as usize, crate::error::GameError::InvalidQuantity);
+    require!(probability_percentages.len() == seed_count as usize, crate::error::GameError::InvalidQuantity);
+    require!(name.len() <= 32, crate::error::GameError::InvalidConfig);
+    
+    // Validate probability thresholds are in ascending order and end at 10000
+    for i in 1..probability_thresholds.len() {
+        require!(
+            probability_thresholds[i] > probability_thresholds[i-1],
+            crate::error::GameError::InvalidConfig
+        );
+    }
+    require!(
+        probability_thresholds[probability_thresholds.len()-1] == 10000,
+        crate::error::GameError::InvalidConfig
+    );
+    
+    // Update table
+    probability_table.version = version;
+    probability_table.seed_count = seed_count;
+    probability_table.expected_value = expected_value;
+    probability_table.updated_at = Clock::get()?.unix_timestamp;
+    
+    // Clear arrays first
+    probability_table.grow_powers = [0; 9];
+    probability_table.probability_thresholds = [0; 9];
+    probability_table.probability_percentages = [0.0; 9];
+    probability_table.name = [0; 32];
+    
+    // Set new values
+    for i in 0..seed_count as usize {
+        probability_table.grow_powers[i] = grow_powers[i];
+        probability_table.probability_thresholds[i] = probability_thresholds[i];
+        probability_table.probability_percentages[i] = probability_percentages[i];
+    }
+    
+    // Set name
+    let name_bytes = name.as_bytes();
+    let name_len = name_bytes.len().min(32);
+    probability_table.name[0..name_len].copy_from_slice(&name_bytes[0..name_len]);
+    
+    msg!("Probability table updated to version {}", version);
+    msg!("Seed count: {}, Expected value: {} GP", seed_count, expected_value);
+    msg!("Table name: {}", name);
+    
+    Ok(())
+}

@@ -14,7 +14,7 @@ export const GAME_CONSTANTS = {
   TOKEN_SYMBOL: 'WEED',
 
   // 時間関連
-  DEFAULT_HALVING_INTERVAL: 31536000, // 1年 (秒)
+  DEFAULT_HALVING_INTERVAL: 200, // 200秒
 
   // 報酬計算関連
   BASE_RATE_INITIAL: 10,

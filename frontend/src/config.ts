@@ -24,7 +24,7 @@ function getConfig(): AppConfig {
   }
 
   const config: AppConfig = {
-    programId: 'FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B',
+    programId: '7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB',
     network: 'devnet',
     rpcUrl: 'https://api.devnet.solana.com', // Always use public devnet for stability
   };

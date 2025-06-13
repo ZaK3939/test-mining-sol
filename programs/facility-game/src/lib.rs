@@ -28,13 +28,7 @@ pub mod error_handling; // エラーハンドリング
 #[cfg(test)]
 pub mod tests;
 
-// 追加の高度なテストモジュール（一時的にコメントアウト）
-// #[cfg(test)]
-// mod test_modules {
-//     pub mod state_advanced_tests;
-//     pub mod error_comprehensive_tests;
-//     pub mod economics_advanced_tests;
-// }
+// Note: Advanced test modules removed - using standard /tests/ directory instead
 
 // 他のモジュールから必要な要素をインポート
 use instructions::*;  // すべての命令コンテキストをインポート
@@ -52,7 +46,7 @@ pub mod farm_game {
     /// 
     /// # Parameters
     /// * `base_rate` - 基本報酬レート（デフォルト: 100 WEED/秒）
-    /// * `halving_interval` - 半減期間隔（デフォルト: 6日）
+    /// * `halving_interval` - 半減期間隔（デフォルト: 7日）
     /// * `treasury` - 手数料収集用ウォレット
     /// 
     /// # Security
@@ -114,6 +108,73 @@ pub mod farm_game {
     ) -> Result<()> {
         instructions::admin::update_config(ctx, new_operator, new_base_rate, new_halving_interval, new_treasury, new_max_invite_limit)
     }
+    
+    /// Initialize probability table with default Table 1 settings
+    /// Creates the dynamic probability table for seed generation
+    /// 
+    /// # Default Settings (Table 1)
+    /// - OG Kush (100 GP): 43%
+    /// - Blue Dream (180 GP): 25%
+    /// - Sour Diesel (420 GP): 14%
+    /// - Girl Scout Cookies (720 GP): 9%
+    /// - Gorilla Glue (1000 GP): 6%
+    /// - Skywalker Kush (5000 GP): 3%
+    /// 
+    /// # Security
+    /// - Admin signature required
+    /// - One-time initialization only
+    pub fn initialize_probability_table(ctx: Context<InitializeProbabilityTable>) -> Result<()> {
+        instructions::admin::initialize_probability_table(ctx)
+    }
+    
+    /// Update probability table with new settings (admin only)
+    /// Allows runtime modification of seed probabilities without code deployment
+    /// 
+    /// # Parameters
+    /// * `version` - Version number for tracking changes
+    /// * `seed_count` - Number of seed types (1-9)
+    /// * `grow_powers` - Grow power values for each seed type
+    /// * `probability_thresholds` - Cumulative probability thresholds (must end at 10000)
+    /// * `probability_percentages` - Human-readable percentage values
+    /// * `expected_value` - Calculated expected grow power per pack
+    /// * `name` - Table name/description (max 32 chars)
+    /// 
+    /// # Examples
+    /// ## Table 1 (6 seeds):
+    /// - grow_powers: [100, 180, 420, 720, 1000, 5000]
+    /// - thresholds: [4300, 6800, 8200, 9100, 9700, 10000]
+    /// - percentages: [43.0, 25.0, 14.0, 9.0, 6.0, 3.0]
+    /// 
+    /// ## Table 2 (9 seeds):
+    /// - grow_powers: [100, 180, 420, 720, 1000, 5000, 15000, 30000, 60000]
+    /// - thresholds: [4222, 6666, 7999, 8832, 9388, 9721, 9854, 9943, 10000]
+    /// - percentages: [42.23, 24.44, 13.33, 8.33, 5.56, 3.33, 1.33, 0.89, 0.56]
+    /// 
+    /// # Security
+    /// - Admin signature required
+    /// - Validates probability distribution sums to 100%
+    /// - Ensures thresholds are in ascending order
+    pub fn update_probability_table(
+        ctx: Context<UpdateProbabilityTable>,
+        version: u32,
+        seed_count: u8,
+        grow_powers: Vec<u64>,
+        probability_thresholds: Vec<u16>,
+        probability_percentages: Vec<f32>,
+        expected_value: u64,
+        name: String,
+    ) -> Result<()> {
+        instructions::admin::update_probability_table(
+            ctx,
+            version,
+            seed_count,
+            grow_powers,
+            probability_thresholds,
+            probability_percentages,
+            expected_value,
+            name,
+        )
+    }
 
     // ===== USER MANAGEMENT INSTRUCTIONS =====
 
@@ -149,20 +210,10 @@ pub mod farm_game {
         instructions::farm::buy_farm_space(ctx)
     }
 
-    /// 農場スペースのアップグレード（即座実行）
-    /// $WEEDを消費して即座に容量増加
-    /// 
-    /// # アップグレードコスト
-    /// - Lv1→2: 3,500 WEED (容量 4→8)
-    /// - Lv2→3: 18,000 WEED (容量 8→12)
-    /// - Lv3→4: 20,000 WEED (容量 12→16)
-    /// - Lv4→5: 25,000 WEED (容量 16→20)
-    /// 
-    /// # 即座実行
-    /// - クールダウンなし、即座にアップグレード完了
-    pub fn upgrade_farm_space(ctx: Context<UpgradeFarmSpace>) -> Result<()> {
-        instructions::farm::upgrade_farm_space(ctx)
-    }
+    // Note: Manual farm upgrades have been replaced with automatic upgrades
+    // Farm spaces now upgrade automatically based on cumulative pack purchases:
+    // Level 2: 30 packs, Level 3: 100 packs, Level 4: 300 packs, Level 5: 500 packs
+    // See purchase_seed_pack instruction for auto-upgrade implementation
 
 
     // ===== REWARD SYSTEM INSTRUCTIONS =====
@@ -326,6 +377,39 @@ pub mod farm_game {
         instructions::seeds::batch_discard_seeds(ctx, seed_ids)
     }
 
+    // ===== FARM LEVEL MANAGEMENT =====
+
+    /// Initialize dynamic farm level configuration with default 5-level system
+    pub fn initialize_farm_level_config(ctx: Context<InitializeFarmLevelConfig>) -> Result<()> {
+        instructions::farm::initialize_farm_level_config(ctx)
+    }
+
+    /// Update farm level configuration (admin only)
+    /// Allows adding new levels or modifying existing thresholds
+    pub fn update_farm_level_config(
+        ctx: Context<UpdateFarmLevelConfig>,
+        max_level: u8,
+        capacities: Vec<u8>,
+        upgrade_thresholds: Vec<u32>,
+        level_names: Option<Vec<String>>,
+    ) -> Result<()> {
+        instructions::farm::update_farm_level_config(
+            ctx, max_level, capacities, upgrade_thresholds, level_names
+        )
+    }
+
+    /// Migrate existing farms to new level configuration
+    pub fn migrate_farm_to_new_levels(ctx: Context<MigrateFarmToNewLevels>) -> Result<()> {
+        instructions::farm::migrate_farm_to_new_levels(ctx)
+    }
+
+    /// Get farm level configuration information (view function)
+    pub fn get_farm_level_info(
+        ctx: Context<ViewFarmLevelConfig>,
+        level: Option<u8>,
+    ) -> Result<FarmLevelInfo> {
+        instructions::farm::get_farm_level_info(ctx, level)
+    }
 
     // ===== TRANSFER FEE SYSTEM =====
     // Using SPL Token Transfer Fee Extension instead of custom implementation

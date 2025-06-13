@@ -26,19 +26,11 @@ pub fn validate_farm_space_ownership(farm_space: &FarmSpace, expected_owner: Pub
     Ok(())
 }
 
-/// Validate farm space can be upgraded
-pub fn validate_can_upgrade_farm_space(farm_space: &FarmSpace) -> Result<()> {
-    // Check if already at max level
-    require!(
-        farm_space.level < 5,
-        GameError::MaxLevelReached
-    );
-    
-    
-    Ok(())
-}
+// Note: Manual farm upgrades have been replaced with automatic upgrades
+// Upgrades now happen automatically based on cumulative pack purchases
+// See UserState.total_packs_purchased and FARM_UPGRADE_THRESHOLDS constants
 
-/// Validate farm space level
+/// Validate farm space level (legacy - uses hardcoded 1-5 levels)
 pub fn validate_farm_space_level(level: u8) -> Result<()> {
     require!(
         crate::constants::validate_farm_level(level),
@@ -47,13 +39,31 @@ pub fn validate_farm_space_level(level: u8) -> Result<()> {
     Ok(())
 }
 
+/// Validate farm space level with dynamic configuration
+pub fn validate_farm_space_level_with_config(level: u8, config: &FarmLevelConfig) -> Result<()> {
+    require!(
+        level >= 1 && level <= config.max_level,
+        GameError::InvalidFarmLevel
+    );
+    Ok(())
+}
+
 // ===== SEED VALIDATION =====
 
-/// Validate seed ownership
+/// Validate seed ownership (moved from common.rs)
 pub fn validate_seed_ownership(seed: &Seed, expected_owner: Pubkey) -> Result<()> {
     require!(
         seed.owner == expected_owner,
         GameError::NotSeedOwner
+    );
+    Ok(())
+}
+
+/// Validate farm space ownership (moved from common.rs)
+pub fn validate_farm_space_ownership(farm_space: &FarmSpace, expected_owner: Pubkey) -> Result<()> {
+    require!(
+        farm_space.owner == expected_owner,
+        GameError::Unauthorized
     );
     Ok(())
 }
@@ -176,22 +186,7 @@ pub fn validate_user_entropy_seed(seed: u64) -> Result<()> {
 
 // ===== COMPOSITE GAME VALIDATION =====
 
-/// Validate complete farm space upgrade request
-pub fn validate_farm_space_upgrade_request(
-    farm_space: &FarmSpace,
-    user_token_balance: u64,
-    owner: Pubkey
-) -> Result<u64> {
-    validate_farm_space_ownership(farm_space, owner)?;
-    validate_can_upgrade_farm_space(farm_space)?;
-    
-    let upgrade_cost = FarmSpace::get_upgrade_cost(farm_space.level)
-        .ok_or(GameError::MaxLevelReached)?;
-    
-    crate::validation::economic_validation::validate_sufficient_balance(user_token_balance, upgrade_cost)?;
-    
-    Ok(upgrade_cost)
-}
+// Legacy upgrade validation removed - now using auto-upgrade system
 
 /// Validate complete seed planting request
 pub fn validate_seed_planting_request(
@@ -248,11 +243,7 @@ mod tests {
         // No capacity
         assert!(validate_farm_space_capacity(&full_farm_space).is_err());
         
-        // Can upgrade
-        assert!(validate_can_upgrade_farm_space(&farm_space).is_ok());
-        
-        // Cannot upgrade (max level)
-        assert!(validate_can_upgrade_farm_space(&max_level_farm).is_err());
+        // Note: Upgrade validation tests removed - now using auto-upgrade system
         
     }
 
@@ -376,12 +367,7 @@ mod tests {
             reserve: [0; 32],
         };
         
-        // Valid farm space upgrade request
-        let cost = validate_farm_space_upgrade_request(&farm_space, sufficient_balance, owner).unwrap();
-        assert!(cost > 0);
-        
-        // Invalid farm space upgrade request (insufficient balance)
-        assert!(validate_farm_space_upgrade_request(&farm_space, insufficient_balance, owner).is_err());
+        // Note: Upgrade validation tests removed - now using auto-upgrade system
         
         // Valid seed planting request
         assert!(validate_seed_planting_request(&seed, &farm_space, owner).is_ok());

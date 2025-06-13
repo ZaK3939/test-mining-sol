@@ -7,7 +7,7 @@ import { config } from '../config';
 import { logger } from '../logger';
 import { SolanaService } from '../solana';
 import { AnchorClient } from '../anchor-client';
-import idl from '../idl/farm_game.json';
+import idl from '../idl/facility_game.json';
 
 describe('Frontend Integration - New Program Communication', () => {
   let connection: Connection;
@@ -59,7 +59,7 @@ describe('Frontend Integration - New Program Communication', () => {
       expect(solanaService).toBeTruthy();
 
       const networkInfo = solanaService.getNetworkInfo();
-      expect(networkInfo.programId).toBe('FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B');
+      expect(networkInfo.programId).toBe('7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB');
       expect(networkInfo.network).toBe('devnet');
 
       logger.info('✅ SolanaService initialization verified');
@@ -85,14 +85,14 @@ describe('Frontend Integration - New Program Communication', () => {
       const pdas = await anchorClient.calculatePDAs(testKeypair.publicKey);
 
       expect(pdas.userState).toBeInstanceOf(PublicKey);
-      expect(pdas.facility).toBeInstanceOf(PublicKey);
+      expect(pdas.farmSpace).toBeInstanceOf(PublicKey);
       expect(pdas.config).toBeInstanceOf(PublicKey);
       expect(pdas.rewardMint).toBeInstanceOf(PublicKey);
       expect(pdas.mintAuthority).toBeInstanceOf(PublicKey);
 
       logger.info('✅ PDA calculation through frontend verified');
       logger.info(`   UserState: ${pdas.userState.toString()}`);
-      logger.info(`   Facility: ${pdas.facility.toString()}`);
+      logger.info(`   FarmSpace: ${pdas.farmSpace.toString()}`);
     });
 
     it('should verify PDA uniqueness across different users', async () => {
@@ -103,7 +103,7 @@ describe('Frontend Integration - New Program Communication', () => {
       const pdas2 = await anchorClient.calculatePDAs(user2.publicKey);
 
       expect(pdas1.userState.toString()).not.toBe(pdas2.userState.toString());
-      expect(pdas1.facility.toString()).not.toBe(pdas2.facility.toString());
+      expect(pdas1.farmSpace.toString()).not.toBe(pdas2.farmSpace.toString());
 
       // Global PDAs should be the same
       expect(pdas1.config.toString()).toBe(pdas2.config.toString());
@@ -121,11 +121,11 @@ describe('Frontend Integration - New Program Communication', () => {
       logger.info('✅ User state fetching verified (null for new user)');
     });
 
-    it('should fetch facility (expected to be null for new user)', async () => {
-      const facility = await anchorClient.fetchFacility(testKeypair.publicKey);
-      expect(facility).toBeNull(); // New user should not have facility yet
+    it('should fetch farm space (expected to be null for new user)', async () => {
+      const farmSpace = await anchorClient.fetchFarmSpace(testKeypair.publicKey);
+      expect(farmSpace).toBeNull(); // New user should not have farm space yet
 
-      logger.info('✅ Facility fetching verified (null for new user)');
+      logger.info('✅ Farm space fetching verified (null for new user)');
     });
 
     it('should fetch config (may be null if not initialized)', async () => {
@@ -139,9 +139,9 @@ describe('Frontend Integration - New Program Communication', () => {
 
       expect(gameState).toBeTruthy();
       expect(gameState.userState).toBeNull(); // New user
-      expect(gameState.facility).toBeNull(); // New user
+      expect(gameState.farmSpace).toBeNull(); // New user
       expect(gameState.userInitialized).toBe(false);
-      expect(gameState.hasFacility).toBe(false);
+      expect(gameState.hasFarmSpace).toBe(false);
       expect(gameState.growPower).toBe(0);
       expect(gameState.tokenBalance).toBe(0);
 
@@ -281,14 +281,15 @@ describe('Frontend Integration - New Program Communication', () => {
       const instructions = idl.instructions.map((i) => i.name);
       const expectedInstructions = [
         'buy_farm_space',
-        'claim_reward_with_referral_rewards',
+        'claim_reward',
         'create_invite_code',
         'create_reward_mint',
         'init_user',
         'initialize_config',
-        'open_seed_pack',
         'purchase_seed_pack',
-        'transfer_with_fee',
+        'open_seed_pack',
+        'plant_seed',
+        'remove_seed',
         'upgrade_farm_space',
         'use_invite_code',
       ];

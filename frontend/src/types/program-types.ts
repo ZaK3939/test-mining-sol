@@ -10,7 +10,7 @@ export interface WalletAdapter {
   signAllTransactions: <T extends Transaction | VersionedTransaction>(txs: T[]) => Promise<T[]>;
 }
 
-// Program account interfaces with strict typing
+// Program account interfaces matching current state.rs
 export interface UserStateAccount {
   owner: PublicKey;
   totalGrowPower: BN;
@@ -27,8 +27,6 @@ export interface FarmSpaceAccount {
   capacity: number;
   seedCount: number;
   totalGrowPower: BN;
-  upgradeStartTime: BN;
-  upgradeTargetLevel: number;
   reserve: number[];
 }
 
@@ -41,29 +39,59 @@ export interface ConfigAccount {
   seedPackCost: BN;
   seedCounter: BN;
   seedPackCounter: BN;
+  farmSpaceCostSol: BN;
+  maxInviteLimit: number;
+  tradingFeePercentage: number;
+  protocolReferralAddress: PublicKey;
+  totalSupplyMinted: BN;
+  operator: PublicKey;
   reserve: number[];
 }
 
 export interface SeedPackAccount {
-  owner: PublicKey;
-  id: BN;
+  purchaser: PublicKey;
+  purchasedAt: BN;
+  costPaid: BN;
+  vrfFeePaid: BN;
   isOpened: boolean;
+  vrfSequence: BN;
+  userEntropySeed: BN;
+  finalRandomValue: BN;
+  packId: BN;
+  vrfAccount: PublicKey;
   reserve: number[];
 }
 
-// Seed rarity enum for type safety
-export enum SeedRarity {
-  Common = 'common',
-  Rare = 'rare',
-  Epic = 'epic',
-  Legendary = 'legendary',
+// Seed types matching program enum
+export enum SeedType {
+  Seed1 = 'Seed1',
+  Seed2 = 'Seed2', 
+  Seed3 = 'Seed3',
+  Seed4 = 'Seed4',
+  Seed5 = 'Seed5',
+  Seed6 = 'Seed6',
+  Seed7 = 'Seed7',
+  Seed8 = 'Seed8',
+  Seed9 = 'Seed9',
 }
 
 export interface SeedAccount {
   owner: PublicKey;
-  id: BN;
-  rarity: { [key in SeedRarity]?: {} };
-  growPowerBonus: BN;
+  seedType: SeedType;
+  growPower: BN;
+  isPlanted: boolean;
+  plantedFarmSpace: PublicKey | null;
+  createdAt: BN;
+  seedId: BN;
+  reserve: number[];
+}
+
+// Seed storage for bulk operations
+export interface SeedStorageAccount {
+  owner: PublicKey;
+  seedIds: BN[];
+  totalSeeds: number;
+  seedTypeCounts: number[];
   reserve: number[];
 }
 
@@ -84,7 +112,8 @@ export function isUserStateAccount(account: unknown): account is UserStateAccoun
     'owner' in account &&
     'totalGrowPower' in account &&
     'lastHarvestTime' in account &&
-    'hasFarmSpace' in account
+    'hasFarmSpace' in account &&
+    'pendingReferralRewards' in account
   );
 }
 

@@ -8,16 +8,36 @@ export {
   type ConfigAccount,
   type SeedPackAccount,
   type SeedAccount,
+  type SeedStorageAccount,
   type TransactionResult,
   type ProgramError,
   type TokenAmount,
-  SeedRarity,
+  SeedType,
   isUserStateAccount,
   isFarmSpaceAccount,
   isConfigAccount,
   safeBNToNumber,
   formatTokenAmount,
 } from './types/program-types';
+
+// 後方互換性のためのエイリアス
+export { SeedType as SeedRarity } from './types/program-types';
+
+// UICallbacks interface
+export interface UICallbacks {
+  onUserInitialized?: () => void;
+  onFarmSpacePurchased?: () => void;
+  onSeedPackPurchased?: () => void;
+  onSeedPlanted?: () => void;
+  onRewardsClaimed?: () => void;
+  onError?: (error: string) => void;
+  showSuccess?: (message: string) => void;
+  showError?: (message: string) => void;
+  showInfo?: (message: string) => void;
+  showLoading?: (message?: string) => void;
+  hideLoading?: () => void;
+  updateGameState?: (state: any) => void;
+}
 
 import { PublicKey } from '@solana/web3.js';
 

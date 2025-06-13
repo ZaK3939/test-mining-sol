@@ -107,7 +107,7 @@ describe('Modern Testing Framework Example', () => {
       // =============== ASSERTIONS ===============
       
       // All operations should succeed for whale player
-      results.forEach((result, index) => {
+      results.forEach((result) => {
         expect(result.status).toBe('fulfilled');
       });
 
@@ -354,7 +354,7 @@ describe('Modern Testing Framework Example', () => {
 
       // =============== ASSERTIONS ===============
       results.forEach(result => {
-        TransactionAssertions.expectTransactionSuccess(result);
+        TransactionAssertions.expectTransactionSuccess(String(result));
       });
       
       // All operations should have triggered callbacks

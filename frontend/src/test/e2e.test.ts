@@ -50,30 +50,30 @@ describe('E2E Tests - Real User Scenarios', () => {
         const initialState = await alice.client.fetchUserState(alice.keypair.publicKey);
         expect(initialState).toBeTruthy();
         if (initialState) {
-          expect(initialState.hasFacility).toBe(false);
+          expect(initialState.hasFarmSpace).toBe(false);
           expect(initialState.totalGrowPower.toNumber()).toBe(0);
         }
         logger.info(`✅ ${alice.name} verified initial state`);
 
-        // Step 3: Purchase facility
-        const facilityResult = await alice.client.buyFacility();
-        expect(typeof facilityResult).toBe('string');
-        logger.info(`✅ ${alice.name} purchased facility`);
+        // Step 3: Purchase farm space
+        const farmSpaceResult = await alice.client.buyFarmSpace();
+        expect(typeof farmSpaceResult).toBe('string');
+        logger.info(`✅ ${alice.name} purchased farm space`);
 
-        // Step 4: Verify facility exists
-        const facility = await alice.client.fetchFacility(alice.keypair.publicKey);
-        expect(facility).toBeTruthy();
-        if (facility) {
-          expect(facility.machineCount).toBeGreaterThan(0);
-          expect(facility.totalGrowPower.toNumber()).toBeGreaterThan(0);
+        // Step 4: Verify farm space exists
+        const farmSpace = await alice.client.fetchFarmSpace(alice.keypair.publicKey);
+        expect(farmSpace).toBeTruthy();
+        if (farmSpace) {
+          expect(farmSpace.seedCount).toBeGreaterThan(0);
+          expect(farmSpace.totalGrowPower.toNumber()).toBeGreaterThan(0);
         }
-        logger.info(`✅ ${alice.name} verified facility creation`);
+        logger.info(`✅ ${alice.name} verified farm space creation`);
 
         // Step 5: Check updated user state
         const updatedState = await alice.client.fetchUserState(alice.keypair.publicKey);
         expect(updatedState).toBeTruthy();
         if (updatedState) {
-          expect(updatedState.hasFacility).toBe(true);
+          expect(updatedState.hasFarmSpace).toBe(true);
           expect(updatedState.totalGrowPower.toNumber()).toBeGreaterThan(0);
         }
         logger.info(`✅ ${alice.name} completed full journey`);
@@ -130,8 +130,8 @@ describe('E2E Tests - Real User Scenarios', () => {
           try {
             // Ensure user has facility for rewards
             const userState = await user.client.fetchUserState(user.keypair.publicKey);
-            if (!userState || !userState.hasFacility) {
-              await user.client.buyFacility();
+            if (!userState || !userState.hasFarmSpace) {
+              await user.client.buyFarmSpace();
             }
 
             const result = await user.client.claimRewards();
@@ -172,7 +172,7 @@ describe('E2E Tests - Real User Scenarios', () => {
         logger.info(`🎯 Testing ${alice.name}'s progressive feature usage`);
 
         // Ensure Alice has a facility
-        await ensureUserHasFacility(alice);
+        await ensureUserHasFarmSpace(alice);
 
         // Test extended features progressively
         const featureTests = [
@@ -260,7 +260,7 @@ describe('E2E Tests - Real User Scenarios', () => {
   });
 
   // Helper function
-  async function ensureUserHasFacility(user: {
+  async function ensureUserHasFarmSpace(user: {
     keypair: Keypair;
     client: AnchorClient;
     name: string;
@@ -272,12 +272,12 @@ describe('E2E Tests - Real User Scenarios', () => {
       }
 
       const updatedState = await user.client.fetchUserState(user.keypair.publicKey);
-      if (updatedState && !updatedState.hasFacility) {
-        await user.client.buyFacility();
+      if (updatedState && !updatedState.hasFarmSpace) {
+        await user.client.buyFarmSpace();
         logger.info(`✅ ${user.name} facility setup completed`);
       }
     } catch (error) {
-      TestHelpers.logTestFailure(`ensureUserHasFacility for ${user.name}`, error);
+      TestHelpers.logTestFailure(`ensureUserHasFarmSpace for ${user.name}`, error);
       throw error;
     }
   }

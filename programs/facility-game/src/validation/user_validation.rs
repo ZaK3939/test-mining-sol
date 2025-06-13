@@ -7,7 +7,7 @@ use crate::error::GameError;
 
 // ===== USER OWNERSHIP & PERMISSIONS =====
 
-/// Validate user ownership of an account
+/// Validate user ownership of an account (centralized in user module)
 pub fn validate_user_ownership(user_state: &UserState, expected_owner: Pubkey) -> Result<()> {
     require!(
         user_state.owner == expected_owner,
@@ -25,6 +25,15 @@ pub fn validate_has_farm_space(user_state: &UserState) -> Result<()> {
     Ok(())
 }
 
+/// Validate user doesn't already have farm space
+pub fn validate_no_existing_farm_space(user_state: &UserState) -> Result<()> {
+    require!(
+        !user_state.has_farm_space,
+        GameError::AlreadyHasFarmSpace
+    );
+    Ok(())
+}
+
 /// Validate user has grow power
 pub fn validate_has_grow_power(user_state: &UserState) -> Result<()> {
     require!(
@@ -34,11 +43,11 @@ pub fn validate_has_grow_power(user_state: &UserState) -> Result<()> {
     Ok(())
 }
 
-/// Validate user doesn't already have farm space
-pub fn validate_no_existing_farm_space(user_state: &UserState) -> Result<()> {
+/// Validate user has sufficient grow power
+pub fn validate_sufficient_grow_power(user_state: &UserState, required: u64) -> Result<()> {
     require!(
-        user_state.has_farm_space == false,
-        GameError::AlreadyHasFarmSpace
+        user_state.total_grow_power >= required, 
+        GameError::InsufficientFunds
     );
     Ok(())
 }
@@ -91,7 +100,8 @@ mod tests {
             has_farm_space: true,
             referrer: None,
             pending_referral_rewards: 0,
-            reserve: [0; 32],
+            total_packs_purchased: 0,
+            reserve: [0; 28],
         };
 
         // Valid ownership
@@ -110,7 +120,8 @@ mod tests {
             has_farm_space: true,
             referrer: None,
             pending_referral_rewards: 0,
-            reserve: [0; 32],
+            total_packs_purchased: 0,
+            reserve: [0; 28],
         };
 
         let user_state_without_farm = UserState {
@@ -136,7 +147,8 @@ mod tests {
             has_farm_space: true,
             referrer: None,
             pending_referral_rewards: 0,
-            reserve: [0; 32],
+            total_packs_purchased: 0,
+            reserve: [0; 28],
         };
 
         let user_without_power = UserState {

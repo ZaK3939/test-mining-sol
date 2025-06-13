@@ -158,7 +158,7 @@ export class ServiceAssertions {
         expect(services.anchorClient.buyFarmSpace).toHaveBeenCalled();
         break;
       case 'claim_reward_with_referral_rewards':
-        expect(services.anchorClient.claimRewardWithReferralRewards).toHaveBeenCalled();
+        expect(services.anchorClient.claimReward).toHaveBeenCalled();
         break;
       case 'seed_pack':
         expect(services.anchorClient.purchaseSeedPack).toHaveBeenCalled();

@@ -7,15 +7,15 @@
 
 /// 基本報酬レート（秒あたりWEEDトークン）
 /// 全プレイヤーの合計Grow Powerで分配されるため、個人報酬は相対的
-/// 設計思想：ベースラインとして1秒で100WEEDを全体で分配
+/// 設計思想：ベースラインとして1秒で200WEEDを全体で分配
 /// プレイヤー増加により個人収益は自動調整される
-pub const DEFAULT_BASE_RATE: u64 = 100;
+pub const DEFAULT_BASE_RATE: u64 = 200;
 
-/// デフォルト半減期間隔（7日 = 604,800秒）
+/// デフォルト半減期間隔（7日）
 /// インフレ抑制とトークン価値維持のための重要メカニズム
-/// 設計思想：週次で報酬を半減し、長期的な希少性を確保
+/// 設計思想：毎週報酬を半減し、段階的に希少性を確保
 /// ビットコインの半減期をモデルとしたデフレ機構
-pub const DEFAULT_HALVING_INTERVAL: i64 = 7 * 24 * 60 * 60; // 604,800秒
+pub const DEFAULT_HALVING_INTERVAL: i64 = 604800; // 7日（604,800秒）
 
 /// 農場スペース購入コスト（0.5 SOL = 500,000,000 lamports）
 /// ゲーム参加の初期投資額、経済圏への参入障壁として機能
@@ -41,32 +41,36 @@ pub const TRADING_FEE_PERCENTAGE: u8 = 2;
 /// 管理者による個別拡張が可能
 pub const MAX_INVITE_LIMIT: u8 = 5;
 
-/// 総WEED供給量（1億2千万トークン、6桁精度）
+/// 総WEED供給量（2億4千万トークン、6桁精度）
 /// 固定供給上限によるインフレ防止とトークン価値保護
 /// 設計思想：長期的な希少性確保と経済安定性の両立
 /// 報酬分配、取引手数料、初期配布を含む全供給量
 /// 半減期メカニズムにより実際の流通量はさらに制限される
-pub const TOTAL_WEED_SUPPLY: u64 = 120_000_000 * 1_000_000;
+pub const TOTAL_WEED_SUPPLY: u64 = 240_000_000 * 1_000_000;
 
 // ===== FARM SPACE CONSTANTS =====
 // 農場システムの成長とアップグレード経済設計
 
 
 /// 農場レベル別容量（種植え可能数）
-/// レベル1:4, レベル2:8, レベル3:12, レベル4:16, レベル5:20
-/// 設計思想：線形成長でシンプルな理解と予測可能性を確保
+/// レベル1:4, レベル2:6, レベル3:8, レベル4:10, レベル5:12
+/// 設計思想：段階的成長でバランスの取れた進行を確保
 /// 戦略的要素：高レベル種の効率的配置が重要になる
-pub const FARM_CAPACITIES: [u8; 5] = [4, 8, 12, 16, 20];
+pub const FARM_CAPACITIES: [u8; 5] = [4, 6, 8, 10, 12];
 
-/// 農場アップグレードコスト（WEEDトークン、6桁精度）
-/// 設計思想：指数的コスト増加で初期は手軽、後期は戦略的投資
-/// 経済バランス：種パック購入との機会コスト比較が重要
-/// ゲーム進行：レベル2-3が中級者の壁、レベル4-5は上級者向け
-pub const UPGRADE_COSTS: [u64; 4] = [
-    3_500 * 1_000_000,   // Level 1→2: 3,500 WEED (約12日分の報酬)
-    18_000 * 1_000_000,  // Level 2→3: 18,000 WEED (約60日分の報酬)
-    20_000 * 1_000_000,  // Level 3→4: 20,000 WEED (約67日分の報酬)
-    25_000 * 1_000_000,  // Level 4→5: 25,000 WEED (約83日分の報酬)
+/// 農場自動アップグレード条件（累積シードパック購入数）
+/// 設計思想：パック購入数に応じた自動アップグレードシステム
+/// ゲーム進行：より多くのパックを購入することで自動的に農場が拡張される
+/// レベル1: 0パック, レベル2: 30パック, レベル3: 100パック, レベル4: 300パック, レベル5: 500パック
+pub const FARM_UPGRADE_THRESHOLDS: [u32; 5] = [0, 30, 100, 300, 500];
+
+/// 従来のアップグレードコスト（後方互換性のため保持、現在は未使用）
+/// 注意：新システムでは累積パック購入数による自動アップグレードを使用
+pub const LEGACY_UPGRADE_COSTS: [u64; 4] = [
+    3_500 * 1_000_000,   // Level 1→2: 3,500 WEED (廃止)
+    18_000 * 1_000_000,  // Level 2→3: 18,000 WEED (廃止)
+    20_000 * 1_000_000,  // Level 3→4: 20,000 WEED (廃止)
+    25_000 * 1_000_000,  // Level 4→5: 25,000 WEED (廃止)
 ];
 
 // ===== SEED SYSTEM CONSTANTS =====
@@ -91,61 +95,52 @@ pub const MAX_SEED_PACK_QUANTITY: u8 = 100;
 /// ユーザー影響：最低1パックから購入可能で参入障壁を軽減
 pub const MIN_SEED_PACK_QUANTITY: u8 = 1;
 
-/// 種タイプ別グロウパワー値
-/// 設計思想：レアリティと性能の相関関係でゲーム内階層を明確化
-/// 経済バランス：高レア種の圧倒的優位性で長期目標を提供
-/// 期待値考慮：平均グロウパワーは約300（後述の期待値計算参照）
-pub const SEED_GROW_POWERS: [u64; 9] = [
-    100,    // Seed1: 基本種（42.23%）
-    180,    // Seed2: 一般種（24.44%）
-    420,    // Seed3: 良質種（13.33%）
-    720,    // Seed4: 上質種（8.33%）
-    1000,   // Seed5: 稀少種（5.56%）
-    5000,   // Seed6: 希少種（3.33%）
-    15000,  // Seed7: 激レア種（1.33%）
-    30000,  // Seed8: 超レア種（0.89%）
-    60000,  // Seed9: 伝説種（0.56%）
+/// 種タイプ別グロウパワー値（確率テーブル1: 6種類）
+/// 設計思想：シンプルな6段階レアリティシステム
+/// 経済バランス：バランスの取れた成長カーブ
+/// 期待値計算：43%×100 + 25%×180 + 14%×420 + 9%×720 + 6%×1000 + 3%×5000 = 499 GP
+pub const SEED_GROW_POWERS: [u64; 6] = [
+    100,    // OG Kush: 基本種（43%）
+    180,    // Blue Dream: 一般種（25%）
+    420,    // Sour Diesel: 良質種（14%）
+    720,    // Girl Scout Cookies: 上質種（9%）
+    1000,   // Gorilla Glue: 稀少種（6%）
+    5000,   // Skywalker Kush: 希少種（3%）
 ];
 
 /// 種確率閾値（10,000分率による精密制御）
 /// 数学的根拠：累積確率分布による効率的な乱数変換
 /// Pyth Entropyの真正乱数を0-9999範囲にマッピング
 /// 透明性：オンチェーンで完全に検証可能な確率制御
-pub const SEED_PROBABILITY_THRESHOLDS: [u16; 9] = [
-    4222,  // Seed1: 42.23% (0-4221)
-    6666,  // Seed2: 24.44% (4222-6665) 
-    7999,  // Seed3: 13.33% (6666-7998)
-    8832,  // Seed4: 8.33% (7999-8831)
-    9388,  // Seed5: 5.56% (8832-9387)
-    9721,  // Seed6: 3.33% (9388-9720)
-    9854,  // Seed7: 1.33% (9721-9853)
-    9943,  // Seed8: 0.89% (9854-9942)
-    10000, // Seed9: 0.56% (9943-9999)
+pub const SEED_PROBABILITY_THRESHOLDS: [u16; 6] = [
+    4300,  // OG Kush: 43% (0-4299)
+    6800,  // Blue Dream: 25% (4300-6799)
+    8200,  // Sour Diesel: 14% (6800-8199)
+    9100,  // Girl Scout Cookies: 9% (8200-9099)
+    9700,  // Gorilla Glue: 6% (9100-9699)
+    10000, // Skywalker Kush: 3% (9700-9999)
 ];
 
 /// 種確率パーセンテージ（表示・文書化用）
 /// ユーザー体験：分かりやすい%表示でドロップ率を明示
-pub const SEED_PROBABILITIES: [f32; 9] = [
-    42.23, 24.44, 13.33, 8.33, 5.56, 3.33, 1.33, 0.89, 0.56
+pub const SEED_PROBABILITIES: [f32; 6] = [
+    43.0, 25.0, 14.0, 9.0, 6.0, 3.0
 ];
 
 // ===== 期待値計算とゲーム経済分析 =====
 
-/// シードパック期待グロウパワー値計算（数学的根拠）
+/// シードパック期待グロウパワー値計算（確率テーブル1）
 /// 計算式：Σ(確率 × グロウパワー) for all seed types
 /// 
 /// 詳細計算：
-/// Seed1: 0.4223 × 100 = 42.23
-/// Seed2: 0.2444 × 180 = 43.99
-/// Seed3: 0.1333 × 420 = 55.99
-/// Seed4: 0.0833 × 720 = 59.98
-/// Seed5: 0.0556 × 1000 = 55.60
-/// Seed6: 0.0333 × 5000 = 166.50
-/// Seed7: 0.0133 × 15000 = 199.50
-/// Seed8: 0.0089 × 30000 = 267.00
-/// Seed9: 0.0056 × 60000 = 336.00
+/// OG Kush: 0.43 × 100 = 43.0
+/// Blue Dream: 0.25 × 180 = 45.0
+/// Sour Diesel: 0.14 × 420 = 58.8
+/// Girl Scout Cookies: 0.09 × 720 = 64.8
+/// Gorilla Glue: 0.06 × 1000 = 60.0
+/// Skywalker Kush: 0.03 × 5000 = 150.0
 /// 
-/// 合計期待値：1,226.79 グロウパワー
+/// 合計期待値：421.6 グロウパワー
 /// 
 /// 経済分析：
 /// - コスト：300 WEED per pack
@@ -273,9 +268,9 @@ pub const SECONDS_PER_HOUR: i64 = 60 * 60;
 pub const SECONDS_PER_DAY: i64 = 24 * SECONDS_PER_HOUR;
 
 /// 1週間の秒数（604,800秒）
-/// 半減期計算、週次イベント、長期統計に使用
-/// ユーザー影響：デフォルト半減期サイクルは7日ごと
-/// 経済設計：週次でトークン発行量が半減し、希少性が増大
+/// 週次イベント、長期統計に使用
+/// ユーザー影響：半減期は7日ごとの標準サイクル
+/// 経済設計：毎週トークン発行量が半減し、段階的に希少性が増大
 pub const SECONDS_PER_WEEK: i64 = 7 * SECONDS_PER_DAY;
 
 // ===== PRECISION AND CALCULATION CONSTANTS =====
@@ -301,12 +296,12 @@ impl crate::state::FarmSpace {
         FARM_CAPACITIES[(level - 1) as usize]
     }
     
-    /// Get upgrade cost for a given level using constants
+    /// Get upgrade cost for a given level using constants (legacy)
     pub fn upgrade_cost_for_level(level: u8) -> Option<u64> {
-        if level == 0 || level > UPGRADE_COSTS.len() as u8 {
+        if level == 0 || level > LEGACY_UPGRADE_COSTS.len() as u8 {
             return None;
         }
-        Some(UPGRADE_COSTS[(level - 1) as usize])
+        Some(LEGACY_UPGRADE_COSTS[(level - 1) as usize])
     }
 }
 
@@ -386,7 +381,7 @@ mod tests {
         assert_eq!(SEED_PROBABILITY_THRESHOLDS.len(), 9);
         assert_eq!(SEED_PROBABILITIES.len(), 9);
         assert_eq!(FARM_CAPACITIES.len(), 5);
-        assert_eq!(UPGRADE_COSTS.len(), 4);
+        assert_eq!(LEGACY_UPGRADE_COSTS.len(), 4);
         
         // Verify probability thresholds are in ascending order
         for i in 1..SEED_PROBABILITY_THRESHOLDS.len() {
@@ -394,7 +389,7 @@ mod tests {
         }
         
         // Verify last threshold is 10000 (100%)
-        assert_eq!(SEED_PROBABILITY_THRESHOLDS[8], 10000);
+        assert_eq!(SEED_PROBABILITY_THRESHOLDS[SEED_PROBABILITY_THRESHOLDS.len()-1], 10000);
         
         // Verify farm capacities are in ascending order
         for i in 1..FARM_CAPACITIES.len() {

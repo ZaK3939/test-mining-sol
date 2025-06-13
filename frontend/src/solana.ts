@@ -189,11 +189,11 @@ export class SolanaService {
     if (!this.wallet.publicKey || !this.anchorClient) {
       return {
         userState: null,
-        facility: null,
+        farmSpace: null,
         config: null,
         tokenBalance: 0,
         userInitialized: false,
-        hasFacility: false,
+        hasFarmSpace: false,
         growPower: 0,
         pendingReferralRewards: 0,
       };
@@ -206,23 +206,23 @@ export class SolanaService {
   private convertToUIGameState(detailedState: DetailedGameState): GameState {
     const gameState: GameState = {
       userInitialized: detailedState.userInitialized,
-      hasFacility: detailedState.hasFacility,
+      hasFarmSpace: detailedState.hasFarmSpace,
       growPower: detailedState.growPower,
       tokenBalance: detailedState.tokenBalance,
       lastHarvestTime: detailedState.userState?.lastHarvestTime.toNumber() || 0,
       pendingReferralRewards: detailedState.pendingReferralRewards,
     };
 
-    // 施設情報を追加
-    if (detailedState.facility) {
-      gameState.facility = {
-        facilitySize: detailedState.facility.facilitySize,
-        maxCapacity: detailedState.facility.maxCapacity,
-        machineCount: detailedState.facility.machineCount,
-        totalGrowPower: detailedState.facility.totalGrowPower.toNumber(),
+    // 農場スペース情報を追加
+    if (detailedState.farmSpace) {
+      gameState.farmSpace = {
+        level: detailedState.farmSpace.level,
+        capacity: detailedState.farmSpace.capacity,
+        seedCount: detailedState.farmSpace.seedCount,
+        totalGrowPower: detailedState.farmSpace.totalGrowPower.toNumber(),
       };
       logger.success(
-        `施設確認: サイズ${detailedState.facility.facilitySize}, マシン${detailedState.facility.machineCount}`
+        `農場確認: レベル${detailedState.farmSpace.level}, 種数${detailedState.farmSpace.seedCount}`
       );
     } else {
       logger.info('施設未所有');
@@ -278,13 +278,13 @@ export class SolanaService {
             tx: T
           ): Promise<T> => {
             if (!window.solana) throw new Error('Wallet not connected');
-            return await window.solana.signTransaction(tx);
+            return await window.solana.signTransaction(tx) as T;
           },
           signAllTransactions: async <T extends Transaction | VersionedTransaction>(
             txs: T[]
           ): Promise<T[]> => {
             if (!window.solana) throw new Error('Wallet not connected');
-            return await window.solana.signAllTransactions(txs);
+            return await window.solana.signAllTransactions(txs) as T[];
           },
         },
         { commitment: 'confirmed' }
@@ -297,13 +297,13 @@ export class SolanaService {
           tx: T
         ): Promise<T> => {
           if (!window.solana) throw new Error('Wallet not connected');
-          return await window.solana.signTransaction(tx);
+          return await window.solana.signTransaction(tx) as T;
         },
         signAllTransactions: async <T extends Transaction | VersionedTransaction>(
           txs: T[]
         ): Promise<T[]> => {
           if (!window.solana) throw new Error('Wallet not connected');
-          return await window.solana.signAllTransactions(txs);
+          return await window.solana.signAllTransactions(txs) as T[];
         },
       });
       logger.success('Anchorクライアントを初期化しました');

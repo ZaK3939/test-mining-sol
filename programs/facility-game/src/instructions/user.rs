@@ -29,7 +29,8 @@ pub fn init_user(ctx: Context<InitUser>, referrer: Option<Pubkey>) -> Result<()>
     user_state.has_farm_space = false;
     user_state.referrer = referrer;
     user_state.pending_referral_rewards = 0;
-    user_state.reserve = [0; 32];
+    user_state.total_packs_purchased = 0;
+    user_state.reserve = [0; 28];
 
     msg!("User initialized: {} with referrer: {:?}", ctx.accounts.user.key(), referrer);
     Ok(())

@@ -117,7 +117,7 @@ async function initialize() {
       logger.info('📝 Config を初期化中...');
 
       const baseRate = new BN(10);
-      const halvingInterval = new BN(86400 * 365); // 1年（秒単位）
+      const halvingInterval = new BN(200); // 200秒
 
       const tx1 = await program.methods
         .initializeConfig(baseRate, halvingInterval, wallet.publicKey)

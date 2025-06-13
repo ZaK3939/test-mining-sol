@@ -1,9 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, TokenAccount};
 use anchor_spl::token_2022::Token2022;
-// TODO: Enable when Pyth Entropy SDK becomes available on crates.io
-// use pyth_entropy_sdk_solana::{HashChain, Request};
-// use arrayref::array_ref; // Unused for now
 // use switchboard_solana::{VrfAccountData, VrfRequestRandomness}; // Temporarily disabled
 use crate::state::*;
 use crate::error::*;
@@ -18,6 +15,15 @@ pub struct PurchaseSeedPack<'info> {
         bump
     )]
     pub user_state: Account<'info, UserState>,
+    
+    /// Farm space account (optional - only required if user has farm space for auto-upgrade)
+    #[account(
+        mut,
+        seeds = [b"farm_space", user.key().as_ref()],
+        bump,
+        constraint = farm_space.owner == user.key() @ GameError::InvalidOwnership
+    )]
+    pub farm_space: Option<Account<'info, FarmSpace>>,
     
     #[account(
         mut,
@@ -119,6 +125,13 @@ pub struct OpenSeedPack<'info> {
     /// Switchboard program (required)
     /// CHECK: Switchboard program ID
     pub switchboard_program: UncheckedAccount<'info>,
+    
+    /// Dynamic probability table for seed generation
+    #[account(
+        seeds = [b"probability_table"],
+        bump
+    )]
+    pub probability_table: Account<'info, ProbabilityTable>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -312,6 +325,21 @@ pub fn purchase_seed_pack(
     seed_pack.vrf_account = ctx.accounts.vrf_account.key();
     seed_pack.reserve = [0; 8];
     
+    // Update user's pack purchase count and check for farm upgrade
+    let user_state = &mut ctx.accounts.user_state;
+    let upgrade_needed = user_state.increment_pack_purchases(quantity as u32);
+    
+    // If upgrade is needed and user has a farm space, auto-upgrade it
+    if upgrade_needed {
+        if let Some(farm_space_account) = &mut ctx.accounts.farm_space {
+            let upgraded = farm_space_account.auto_upgrade(user_state.total_packs_purchased);
+            if upgraded {
+                msg!("Farm space auto-upgraded to level {} (capacity: {}) after purchasing {} total packs", 
+                     farm_space_account.level, farm_space_account.capacity, user_state.total_packs_purchased);
+            }
+        }
+    }
+    
     // Update global counter
     ctx.accounts.config.seed_pack_counter += 1;
     
@@ -336,6 +364,8 @@ fn burn_seed_pack_payment(ctx: &Context<PurchaseSeedPack>, total_cost: u64) -> R
 
 /// Solana高品質乱数生成 (Pyth EntropyはSolana未対応のため)
 /// 複数のSolana固有エントロピー源を組み合わせた信頼性の高い乱数生成
+/// Currently unused but reserved for future VRF implementation
+#[allow(dead_code)]
 fn request_solana_entropy(ctx: &Context<PurchaseSeedPack>, user_entropy_seed: u64) -> Result<u64> {
     let clock = Clock::get()?;
     let user_key_bytes = ctx.accounts.user.key().to_bytes();
@@ -454,8 +484,14 @@ pub fn open_seed_pack(ctx: Context<OpenSeedPack>, quantity: u8) -> Result<()> {
     // Store the final random value in the pack for transparency
     seed_pack.final_random_value = final_random_value;
     
-    // Generate seeds using Pyth Entropy
-    generate_seeds_from_entropy(final_random_value, config, seed_storage, quantity)?;
+    // Generate seeds using dynamic probability table
+    generate_seeds_from_entropy_dynamic(
+        final_random_value, 
+        config, 
+        seed_storage, 
+        &ctx.accounts.probability_table,
+        quantity
+    )?;
     
     // Mark pack as opened
     seed_pack.is_opened = true;
@@ -468,6 +504,8 @@ pub fn open_seed_pack(ctx: Context<OpenSeedPack>, quantity: u8) -> Result<()> {
 
 /// Solana高品質乱数取得 (シードパック開封時)
 /// 複数のSolanaエントロピー源とコミット時データを組み合わせた最終乱数生成
+/// Currently unused but reserved for future VRF implementation
+#[allow(dead_code)]
 fn retrieve_solana_entropy_result(ctx: &Context<OpenSeedPack>, seed_pack: &SeedPack) -> Result<u64> {
     let clock = Clock::get()?;
     let user_key_bytes = ctx.accounts.user.key().to_bytes();
@@ -564,34 +602,60 @@ fn retrieve_switchboard_vrf_result_simplified(ctx: &Context<OpenSeedPack>, seed_
     Ok(random_value)
 }
 
-/// Generate seeds using Pyth Entropy result
-fn generate_seeds_from_entropy(
+/// Generate seeds using dynamic probability table
+fn generate_seeds_from_entropy_dynamic(
     base_random: u64,
     config: &mut Config,
     seed_storage: &mut SeedStorage,
+    probability_table: &ProbabilityTable,
     quantity: u8,
 ) -> Result<()> {
     for i in 0..quantity {
         // Derive individual seed randomness using cryptographic approach
         // Combine base entropy with index for unique per-seed randomness
         let seed_random = derive_seed_randomness(base_random, i);
-            
-        let seed_type = SeedType::from_random(seed_random);
+        
+        // Use dynamic probability table to determine seed type
+        let seed_type = determine_seed_type_from_table(seed_random, probability_table)?;
         let seed_id = config.seed_counter;
         
         // Add seed to storage with type tracking and auto-discard
         add_seed_to_storage(seed_storage, seed_id, seed_type)?;
         config.seed_counter += 1;
         
-        msg!("Seed generated: ID {}, Type: {:?}, Grow Power: {}, Random: {}", 
-             seed_id, seed_type, seed_type.get_grow_power(), seed_random);
+        msg!("Seed generated: ID {}, Type: {:?}, Grow Power: {}, Random: {}, Table Version: {}", 
+             seed_id, seed_type, seed_type.get_grow_power(), seed_random, probability_table.version);
     }
     
     Ok(())
 }
 
+/// Determine seed type using dynamic probability table
+fn determine_seed_type_from_table(
+    random_value: u64,
+    probability_table: &ProbabilityTable,
+) -> Result<SeedType> {
+    // Convert random value to 0-9999 range
+    let normalized_random = (random_value % 10000) as u16;
+    
+    // Get active thresholds based on seed count
+    let thresholds = probability_table.get_active_thresholds();
+    
+    // Find which threshold the random value falls under
+    for (index, &threshold) in thresholds.iter().enumerate() {
+        if normalized_random < threshold {
+            // Convert index to SeedType
+            return SeedType::from_index(index as u8);
+        }
+    }
+    
+    // Fallback to last seed type if something goes wrong
+    let fallback_index = (probability_table.seed_count - 1).min(8);
+    SeedType::from_index(fallback_index)
+}
+
 /// Derive individual seed randomness from base entropy
-fn derive_seed_randomness(base_entropy: u64, index: u8) -> u64 {
+pub fn derive_seed_randomness(base_entropy: u64, index: u8) -> u64 {
     // Use a cryptographic approach to derive independent randomness for each seed
     // This ensures each seed gets unique, unbiased randomness from the base entropy
     

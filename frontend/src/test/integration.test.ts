@@ -75,36 +75,36 @@ describe('Integration Tests - Deployed Program', () => {
       const userState = await anchorClient.fetchUserState(testKeypair.publicKey);
       expect(userState).toBeTruthy();
       expect(userState!.owner.toString()).toBe(testKeypair.publicKey.toString());
-      expect(userState!.hasFacility).toBe(false);
+      expect(userState!.hasFarmSpace).toBe(false);
 
       logger.info('✅ User initialization completed');
     });
 
-    it('should handle facility purchase flow', async () => {
+    it('should handle farm space purchase flow', async () => {
       // Ensure user is initialized first
       await ensureUserInitialized();
 
-      // Purchase facility
-      const facilityResult = await anchorClient.buyFacility();
-      expect(typeof facilityResult).toBe('string');
-      expect(facilityResult).not.toBe('already_owned');
+      // Purchase farm space
+      const farmSpaceResult = await anchorClient.buyFarmSpace();
+      expect(typeof farmSpaceResult).toBe('string');
+      expect(farmSpaceResult).not.toBe('already_owned');
 
-      // Verify facility was created
-      const facility = await anchorClient.fetchFacility(testKeypair.publicKey);
-      expect(facility).toBeTruthy();
-      expect(facility!.owner.toString()).toBe(testKeypair.publicKey.toString());
-      expect(facility!.facilitySize).toBeGreaterThan(0);
+      // Verify farm space was created
+      const farmSpace = await anchorClient.fetchFarmSpace(testKeypair.publicKey);
+      expect(farmSpace).toBeTruthy();
+      expect(farmSpace!.owner.toString()).toBe(testKeypair.publicKey.toString());
+      expect(farmSpace!.capacity).toBeGreaterThan(0);
 
       // Verify user state updated
       const userState = await anchorClient.fetchUserState(testKeypair.publicKey);
-      expect(userState!.hasFacility).toBe(true);
+      expect(userState!.hasFarmSpace).toBe(true);
 
-      logger.info('✅ Facility purchase completed');
+      logger.info('✅ Farm space purchase completed');
     });
 
     it('should handle token operations', async () => {
-      // Ensure user has facility for token operations
-      await ensureUserHasFacility();
+      // Ensure user has farm space for token operations
+      await ensureUserHasFarmSpace();
 
       // Test reward claiming
       try {
@@ -152,7 +152,7 @@ describe('Integration Tests - Deployed Program', () => {
     });
 
     it('should test extended features', async () => {
-      await ensureUserHasFacility();
+      await ensureUserHasFarmSpace();
 
       try {
         // Test facility upgrade
@@ -172,7 +172,7 @@ describe('Integration Tests - Deployed Program', () => {
     });
 
     it('should test mystery box system', async () => {
-      await ensureUserHasFacility();
+      await ensureUserHasFarmSpace();
 
       try {
         // Attempt to purchase mystery box
@@ -308,16 +308,16 @@ describe('Integration Tests - Deployed Program', () => {
     }
   }
 
-  async function ensureUserHasFacility() {
+  async function ensureUserHasFarmSpace() {
     try {
       await ensureUserInitialized();
       const userState = await anchorClient.fetchUserState(testKeypair.publicKey);
-      if (!userState!.hasFacility) {
-        await anchorClient.buyFacility();
-        logger.info('✅ Facility purchased for test');
+      if (!userState!.hasFarmSpace) {
+        await anchorClient.buyFarmSpace();
+        logger.info('✅ Farm space purchased for test');
       }
     } catch (error) {
-      TestHelpers.logTestFailure('ensureUserHasFacility', error);
+      TestHelpers.logTestFailure('ensureUserHasFarmSpace', error);
       throw error;
     }
   }

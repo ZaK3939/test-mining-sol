@@ -12,12 +12,6 @@ import { PDAHelper, type PDAs } from './utils/pda-helper';
 import { cacheManager } from './utils/cache-manager';
 import { BatchFetcher } from './utils/batch-fetcher';
 import { ERROR_MESSAGES } from './utils/constants';
-import { 
-  generateUserEntropySeed, 
-  prepareSeedPackPurchaseAccounts,
-  waitForEntropyResult,
-  deriveEntropyRequestPDA 
-} from './utils/pyth-entropy-helper';
 import {
   type WalletAdapter,
   type UserStateAccount,
@@ -32,7 +26,7 @@ import {
   isConfigAccount,
   safeBNToNumber,
 } from './types/program-types';
-import idl from './idl/farm_game.json';
+import idl from './idl/facility_game.json';
 
 // Type for the Farm Game IDL
 type FarmGameIDL = Idl;
@@ -54,6 +48,9 @@ interface ProgramAccountNamespace {
   seed: {
     fetchNullable(address: PublicKey): Promise<SeedAccount | null>;
   };
+  inviteCode: {
+    fetchNullable(address: PublicKey): Promise<any | null>;
+  };
 }
 
 // Program interface for type-safe methods
@@ -61,8 +58,7 @@ interface ProgramMethodNamespace {
   initializeConfig(
     baseRate: BN | null,
     halvingInterval: BN | null,
-    treasury: PublicKey,
-    protocolReferralAddress: PublicKey | null
+    treasury: PublicKey
   ): {
     accounts(accounts: Record<string, PublicKey>): {
       rpc(): Promise<string>;
@@ -111,7 +107,7 @@ interface ProgramMethodNamespace {
       rpc(): Promise<string>;
     };
   };
-  purchaseSeedPack(quantity: number, userEntropySeed: BN): {
+  purchaseSeedPack(quantity: number): {
     accounts(accounts: Record<string, PublicKey>): {
       rpc(): Promise<string>;
     };
@@ -171,7 +167,7 @@ export class AnchorClient {
       programId: anchorProgram.programId,
       coder: anchorProgram.coder,
       account: anchorProgram.account as ProgramAccountNamespace,
-      methods: anchorProgram.methods as ProgramMethodNamespace,
+      methods: anchorProgram.methods as unknown as ProgramMethodNamespace,
     };
 
     // Initialize batch fetcher for performance optimization
@@ -196,9 +192,9 @@ export class AnchorClient {
   // Initialize config (admin only)
   async initializeConfig(
     baseRate: BN | null = new BN(100),
-    halvingInterval: BN | null = new BN(518400), // 6 days
+    halvingInterval: BN | null = new BN(604800), // 7 days
     treasury?: PublicKey,
-    protocolReferralAddress?: PublicKey
+    _protocolReferralAddress?: PublicKey
   ): Promise<string> {
     try {
       logger.info('⚙️ 設定を初期化中...');
@@ -210,7 +206,7 @@ export class AnchorClient {
       const treasuryAccount = treasury || userPublicKey;
 
       const tx = await this.program.methods
-        .initializeConfig(baseRate, halvingInterval, treasuryAccount, protocolReferralAddress || null)
+        .initializeConfig(baseRate, halvingInterval, treasuryAccount)
         .accounts({
           config: pdas.config,
           admin: userPublicKey,
@@ -796,22 +792,14 @@ export class AnchorClient {
     }
   }
 
-  // Purchase seed pack with Pyth Entropy
-  async purchaseSeedPack(quantity: number): Promise<{
-    transactionSignature: string;
-    entropySequence: BN;
-    entropyRequestAccount: PublicKey;
-  }> {
+  // Purchase seed pack with Switchboard VRF
+  async purchaseSeedPack(quantity: number): Promise<string> {
     try {
-      logger.info('📦 Pyth Entropyを使用してシードパックを購入中...');
+      logger.info('📦 Switchboard VRFを使用してシードパックを購入中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
       const userTokenAccount = await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
-
-      // Generate cryptographically secure user entropy seed
-      const userEntropySeed = generateUserEntropySeed();
-      logger.info(`🎲 ユーザーエントロピーシード生成: ${userEntropySeed.toString()}`);
 
       // Generate seed pack PDA
       const config = await this.fetchConfig();
@@ -827,36 +815,22 @@ export class AnchorClient {
         this.program.programId
       );
 
-      // Prepare Pyth Entropy accounts
-      // Note: In a real implementation, you would get the actual entropy sequence from Pyth
-      const entropySequence = new BN(Date.now() + Math.floor(Math.random() * 1000000));
-      const entropyAccounts = prepareSeedPackPurchaseAccounts(userPublicKey, seedPackPDA, entropySequence);
-
       const tx = await this.program.methods
-        .purchaseSeedPack(quantity, userEntropySeed)
+        .purchaseSeedPack(quantity)
         .accounts({
           userState: pdas.userState,
           config: pdas.config,
           seedPack: seedPackPDA,
           rewardMint: pdas.rewardMint,
           userTokenAccount: userTokenAccount,
-          entropyProvider: entropyAccounts.entropyProvider,
-          entropyRequest: entropyAccounts.entropyRequest,
           user: userPublicKey,
-          pythEntropyProgram: entropyAccounts.pythEntropyProgram,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
 
       logger.success(`シードパック購入成功! トランザクション: ${tx}`);
-      logger.info(`🔗 エントロピー要求アカウント: ${entropyAccounts.entropyRequest.toString()}`);
-      
-      return {
-        transactionSignature: tx,
-        entropySequence,
-        entropyRequestAccount: entropyAccounts.entropyRequest,
-      };
+      return tx;
     } catch (error) {
       logger.error(
         `シードパック購入エラー: ${error instanceof Error ? error.message : String(error)}`
@@ -865,14 +839,10 @@ export class AnchorClient {
     }
   }
 
-  // Open seed pack with Pyth Entropy validation
-  async openSeedPack(
-    packId: number, 
-    quantity: number,
-    entropyRequestAccount?: PublicKey
-  ): Promise<string> {
+  // Open seed pack with Switchboard VRF
+  async openSeedPack(packId: number, quantity: number): Promise<string> {
     try {
-      logger.info('📦 Pyth Entropyを使用してシードパックを開封中...');
+      logger.info('📦 Switchboard VRFを使用してシードパックを開封中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
@@ -892,38 +862,13 @@ export class AnchorClient {
         this.program.programId
       );
 
-      // If entropy request account is provided, wait for entropy result
-      if (entropyRequestAccount) {
-        logger.info('⏳ Pyth Entropyの結果を待機中...');
-        try {
-          const entropyResult = await waitForEntropyResult(
-            this.provider.connection,
-            entropyRequestAccount,
-            {
-              maxAttempts: 30,
-              pollIntervalMs: 2000,
-              timeoutMs: 60000,
-            }
-          );
-          logger.success(`✅ エントロピー結果取得: ${entropyResult.randomValue.toString()}`);
-        } catch (error) {
-          logger.warn(`⚠️ エントロピー結果待機タイムアウト。既存の乱数を使用: ${error}`);
-          // Continue with fallback - in a real implementation, you might want to retry or error
-        }
-      }
-
-      // Prepare Pyth Entropy program account
-      const pythEntropyAccounts = prepareSeedPackPurchaseAccounts(userPublicKey, seedPackPDA, new BN(0));
-
       const tx = await this.program.methods
         .openSeedPack(quantity)
         .accounts({
           seedPack: seedPackPDA,
           config: pdas.config,
           seedStorage: seedStoragePDA,
-          entropyRequest: entropyRequestAccount || pythEntropyAccounts.entropyRequest,
           user: userPublicKey,
-          pythEntropyProgram: pythEntropyAccounts.pythEntropyProgram,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
@@ -1018,25 +963,25 @@ export class AnchorClient {
     }
   }
 
-  // Fetch mystery box
-  async fetchMysteryBox(
+  // Fetch seed pack (replaces mystery box)
+  async fetchSeedPack(
     userPublicKey: PublicKey,
-    mysteryBoxId: number
-  ): Promise<MysteryBoxAccount | null> {
+    seedPackId: number
+  ): Promise<SeedPackAccount | null> {
     try {
-      const [mysteryBoxPDA] = await PublicKey.findProgramAddress(
+      const [seedPackPDA] = await PublicKey.findProgramAddress(
         [
-          Buffer.from('mystery_box'),
+          Buffer.from('seed_pack'),
           userPublicKey.toBuffer(),
-          new BN(mysteryBoxId).toArrayLike(Buffer, 'le', 8),
+          new BN(seedPackId).toArrayLike(Buffer, 'le', 8),
         ],
         this.program.programId
       );
-      const mysteryBox = await this.program.account.mysteryBox.fetchNullable(mysteryBoxPDA);
-      return mysteryBox;
+      const seedPack = await this.program.account.seedPack.fetchNullable(seedPackPDA);
+      return seedPack;
     } catch (error) {
       logger.error(
-        `ミステリーボックス取得エラー: ${error instanceof Error ? error.message : String(error)}`
+        `シードパック取得エラー: ${error instanceof Error ? error.message : String(error)}`
       );
       return null;
     }
@@ -1096,11 +1041,11 @@ export class AnchorClient {
   // Optimized batch fetching for complete game state
   async fetchCompleteGameState(userPublicKey: PublicKey): Promise<{
     userState: UserStateAccount | null;
-    facility: FacilityAccount | null;
+    farmSpace: FarmSpaceAccount | null;
     config: ConfigAccount | null;
     tokenBalance: number;
     userInitialized: boolean;
-    hasFacility: boolean;
+    hasFarmSpace: boolean;
     growPower: number;
     pendingReferralRewards: number;
   }> {
@@ -1110,7 +1055,7 @@ export class AnchorClient {
       // Create batch request for all game state accounts
       const batchRequests = BatchFetcher.createGameStateBatch(userPublicKey, {
         userState: pdas.userState,
-        facility: pdas.facility,
+        farmSpace: pdas.farmSpace,
         config: pdas.config,
         rewardMint: pdas.rewardMint,
       });
@@ -1120,7 +1065,7 @@ export class AnchorClient {
 
       // Process results with caching
       let userState: UserStateAccount | null = null;
-      let facility: FacilityAccount | null = null;
+      let farmSpace: FarmSpaceAccount | null = null;
       let config: ConfigAccount | null = null;
 
       for (const result of results) {
@@ -1129,7 +1074,7 @@ export class AnchorClient {
         switch (result.name) {
           case 'userState':
             try {
-              const decoded = this.program.coder.accounts.decode('userState', result.account.data);
+              const decoded = this.program.coder.accounts.decode('userState', result.account.data) as unknown;
               if (isUserStateAccount(decoded)) {
                 userState = decoded;
                 cacheManager.cacheUserState(userPublicKey, decoded);
@@ -1139,21 +1084,21 @@ export class AnchorClient {
             }
             break;
 
-          case 'facility':
+          case 'farmSpace':
             try {
-              const decoded = this.program.coder.accounts.decode('facility', result.account.data);
-              if (isFacilityAccount(decoded)) {
-                facility = decoded;
-                cacheManager.cacheFacility(userPublicKey, decoded);
+              const decoded = this.program.coder.accounts.decode('farmSpace', result.account.data) as unknown;
+              if (isFarmSpaceAccount(decoded)) {
+                farmSpace = decoded;
+                cacheManager.cacheFarmSpace(userPublicKey, decoded);
               }
             } catch (e) {
-              logger.warn(`Facility decode error: ${e}`);
+              logger.warn(`FarmSpace decode error: ${e}`);
             }
             break;
 
           case 'config':
             try {
-              const decoded = this.program.coder.accounts.decode('config', result.account.data);
+              const decoded = this.program.coder.accounts.decode('config', result.account.data) as unknown;
               if (isConfigAccount(decoded)) {
                 config = decoded;
                 cacheManager.cacheConfig(this.program.programId, decoded);
@@ -1170,12 +1115,12 @@ export class AnchorClient {
 
       return {
         userState,
-        facility,
+        farmSpace,
         config,
         tokenBalance,
         userInitialized: userState !== null,
-        hasFacility: userState?.hasFacility ?? false,
-        growPower: safeBNToNumber(facility?.totalGrowPower) || 0,
+        hasFarmSpace: userState?.hasFarmSpace ?? false,
+        growPower: safeBNToNumber(farmSpace?.totalGrowPower) || 0,
         pendingReferralRewards: userState ? safeBNToNumber(userState.pendingReferralRewards) : 0,
       };
     } catch (error) {
@@ -1185,18 +1130,18 @@ export class AnchorClient {
 
       // Fallback to individual fetching
       const userState = await this.fetchUserState(userPublicKey);
-      const facility = await this.fetchFarmSpace(userPublicKey);
+      const farmSpace = await this.fetchFarmSpace(userPublicKey);
       const config = await this.fetchConfig();
       const tokenBalance = await this.getTokenBalance(userPublicKey);
 
       return {
         userState,
-        facility,
+        farmSpace,
         config,
         tokenBalance,
         userInitialized: userState !== null,
-        hasFacility: userState?.hasFacility ?? false,
-        growPower: safeBNToNumber(facility?.totalGrowPower) || 0,
+        hasFarmSpace: userState?.hasFarmSpace ?? false,
+        growPower: safeBNToNumber(farmSpace?.totalGrowPower) || 0,
         pendingReferralRewards: userState ? safeBNToNumber(userState.pendingReferralRewards) : 0,
       };
     }
@@ -1279,5 +1224,10 @@ export class AnchorClient {
       name: 'ProgramError',
       message: String(error),
     };
+  }
+
+  // Get program ID
+  getProgramId(): PublicKey {
+    return this.program.programId;
   }
 }

@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use crate::error::*;
 
 // VRF専用にするため、RandomnessMethodは削除
 // 全てSwitchboard VRFで統一
@@ -9,7 +10,7 @@ use anchor_lang::prelude::*;
 pub struct Config {
     /// Base reward rate in tokens per second (default: 100 WEED/sec)
     pub base_rate: u64,
-    /// Halving mechanism interval in seconds (default: 7 days)
+    /// Halving mechanism interval in seconds (default: 200 seconds)
     pub halving_interval: i64,
     /// Next scheduled halving timestamp
     pub next_halving_time: i64,
@@ -55,8 +56,10 @@ pub struct UserState {
     pub referrer: Option<Pubkey>,
     /// Unclaimed referral commission tokens
     pub pending_referral_rewards: u64,
-    /// Reserved bytes for future features
-    pub reserve: [u8; 32],
+    /// Total number of seed packs purchased by this user (for farm auto-upgrade)
+    pub total_packs_purchased: u32,
+    /// Reserved bytes for future features (reduced from 32 to 28 to accommodate total_packs_purchased)
+    pub reserve: [u8; 28],
 }
 
 /// Farm space account for seed cultivation
@@ -75,6 +78,89 @@ pub struct FarmSpace {
     pub total_grow_power: u64,
     /// Reserved bytes for future expansion
     pub reserve: [u8; 32],
+}
+
+/// Dynamic probability table for seed generation
+/// Allows admin to update probabilities without code changes
+#[account]
+pub struct ProbabilityTable {
+    /// Table version number for tracking updates
+    pub version: u32,
+    /// Number of seed types in this table (6 for Table 1, 9 for Table 2)
+    pub seed_count: u8,
+    /// Grow power values for each seed type (max 9 types)
+    pub grow_powers: [u64; 9],
+    /// Probability thresholds for cumulative distribution (max 9 types)
+    pub probability_thresholds: [u16; 9],
+    /// Human-readable probability percentages (max 9 types)
+    pub probability_percentages: [f32; 9],
+    /// Expected value of a pack with this table
+    pub expected_value: u64,
+    /// Table name/description
+    pub name: [u8; 32],
+    /// Creation timestamp
+    pub created_at: i64,
+    /// Last update timestamp
+    pub updated_at: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+impl ProbabilityTable {
+    pub const LEN: usize = 8 + // discriminator
+        4 + // version
+        1 + // seed_count
+        72 + // grow_powers (9 * 8)
+        18 + // probability_thresholds (9 * 2)
+        36 + // probability_percentages (9 * 4)
+        8 + // expected_value
+        32 + // name
+        8 + // created_at
+        8 + // updated_at
+        32; // reserve
+
+    /// Initialize with Table 1 settings (6 seeds)
+    pub fn init_table_1() -> Self {
+        let mut table = Self {
+            version: 1,
+            seed_count: 6,
+            grow_powers: [0; 9],
+            probability_thresholds: [0; 9],
+            probability_percentages: [0.0; 9],
+            expected_value: 0,
+            name: [0; 32],
+            created_at: 0,
+            updated_at: 0,
+            reserve: [0; 32],
+        };
+        
+        // Table 1 settings
+        table.grow_powers[0..6].copy_from_slice(&[100, 180, 420, 720, 1000, 5000]);
+        table.probability_thresholds[0..6].copy_from_slice(&[4300, 6800, 8200, 9100, 9700, 10000]);
+        table.probability_percentages[0..6].copy_from_slice(&[43.0, 25.0, 14.0, 9.0, 6.0, 3.0]);
+        table.expected_value = 421; // Calculated expected value
+        
+        // Set name "Table1"
+        let name_bytes = b"Table1";
+        table.name[0..name_bytes.len()].copy_from_slice(name_bytes);
+        
+        table
+    }
+    
+    /// Get active grow powers (only up to seed_count)
+    pub fn get_active_grow_powers(&self) -> &[u64] {
+        &self.grow_powers[0..self.seed_count as usize]
+    }
+    
+    /// Get active probability thresholds (only up to seed_count)
+    pub fn get_active_thresholds(&self) -> &[u16] {
+        &self.probability_thresholds[0..self.seed_count as usize]
+    }
+    
+    /// Get active probability percentages (only up to seed_count)
+    pub fn get_active_percentages(&self) -> &[f32] {
+        &self.probability_percentages[0..self.seed_count as usize]
+    }
 }
 
 impl Config {
@@ -101,8 +187,8 @@ impl Config {
     /// Default base rate (100 WEED per second)
     pub const DEFAULT_BASE_RATE: u64 = 100;
     
-    /// Default halving interval (7 days in seconds)
-    pub const DEFAULT_HALVING_INTERVAL: i64 = 7 * 24 * 60 * 60;
+    /// Default halving interval (200 seconds)
+    pub const DEFAULT_HALVING_INTERVAL: i64 = 200;
 }
 
 impl UserState {
@@ -113,7 +199,20 @@ impl UserState {
         1 + // has_farm_space
         1 + 32 + // referrer (Option<Pubkey>: 1 byte discriminator + 32 bytes for Some(Pubkey))
         8 + // pending_referral_rewards
-        32; // reserve
+        4 + // total_packs_purchased
+        28; // reserve (reduced from 32)
+        
+    /// Increment pack purchase count and return if farm upgrade is needed
+    pub fn increment_pack_purchases(&mut self, quantity: u32) -> bool {
+        let old_total = self.total_packs_purchased;
+        self.total_packs_purchased = self.total_packs_purchased.saturating_add(quantity);
+        
+        // Check if the pack purchase crossed an upgrade threshold
+        let old_level = FarmSpace::calculate_level_from_packs(old_total);
+        let new_level = FarmSpace::calculate_level_from_packs(self.total_packs_purchased);
+        
+        new_level > old_level
+    }
 }
 
 impl FarmSpace {
@@ -126,27 +225,45 @@ impl FarmSpace {
         32; // reserve
     
         
-    /// Get capacity for a given level
+    /// Get capacity for a given level using constants
     pub fn get_capacity_for_level(level: u8) -> u8 {
-        match level {
-            1 => 4,
-            2 => 8,
-            3 => 12,
-            4 => 16,
-            5 => 20,
-            _ => 20, // Maximum capacity
+        use crate::constants::FARM_CAPACITIES;
+        if level == 0 || level > FARM_CAPACITIES.len() as u8 {
+            return FARM_CAPACITIES[FARM_CAPACITIES.len() - 1]; // Max capacity
         }
+        FARM_CAPACITIES[(level - 1) as usize]
     }
     
-    /// Get upgrade cost for next level
-    pub fn get_upgrade_cost(current_level: u8) -> Option<u64> {
-        match current_level {
-            1 => Some(3500),   // Level 1→2: 3500 $WEED
-            2 => Some(18000),  // Level 2→3: 18000 $WEED
-            3 => Some(20000),  // Level 3→4: 20000 $WEED
-            4 => Some(25000),  // Level 4→5: 25000 $WEED
-            _ => None,         // No upgrade available
+    /// Get legacy upgrade cost for next level (deprecated - now uses auto-upgrade)
+    pub fn get_legacy_upgrade_cost(current_level: u8) -> Option<u64> {
+        use crate::constants::LEGACY_UPGRADE_COSTS;
+        if current_level == 0 || current_level > LEGACY_UPGRADE_COSTS.len() as u8 {
+            return None;
         }
+        Some(LEGACY_UPGRADE_COSTS[(current_level - 1) as usize])
+    }
+    
+    /// Calculate required farm level based on cumulative pack purchases
+    pub fn calculate_level_from_packs(total_packs: u32) -> u8 {
+        use crate::constants::FARM_UPGRADE_THRESHOLDS;
+        
+        for (i, &threshold) in FARM_UPGRADE_THRESHOLDS.iter().enumerate().rev() {
+            if total_packs >= threshold {
+                return (i + 1) as u8;
+            }
+        }
+        1 // Default to level 1
+    }
+    
+    /// Update farm space level and capacity based on pack purchases
+    pub fn auto_upgrade(&mut self, total_packs: u32) -> bool {
+        let new_level = Self::calculate_level_from_packs(total_packs);
+        if new_level > self.level {
+            self.level = new_level;
+            self.capacity = Self::get_capacity_for_level(new_level);
+            return true; // Upgrade occurred
+        }
+        false // No upgrade needed
     }
     
 }
@@ -211,6 +328,22 @@ impl SeedType {
     /// Validate seed type enum value
     pub fn is_valid(value: u8) -> bool {
         value < 9
+    }
+    
+    /// Create SeedType from index (for dynamic probability tables)
+    pub fn from_index(index: u8) -> Result<SeedType> {
+        match index {
+            0 => Ok(SeedType::Seed1),
+            1 => Ok(SeedType::Seed2),
+            2 => Ok(SeedType::Seed3),
+            3 => Ok(SeedType::Seed4),
+            4 => Ok(SeedType::Seed5),
+            5 => Ok(SeedType::Seed6),
+            6 => Ok(SeedType::Seed7),
+            7 => Ok(SeedType::Seed8),
+            8 => Ok(SeedType::Seed9),
+            _ => Err(crate::error::GameError::InvalidConfig.into()),
+        }
     }
 }
 
@@ -308,12 +441,14 @@ pub struct InviteCode {
     pub created_at: i64,
     /// Whether this code is active
     pub is_active: bool,
+    /// Whether this code was created by an operator (for privilege validation)
+    pub created_as_operator: bool,
     /// Reserved for future expansion
-    pub reserve: [u8; 15],
+    pub reserve: [u8; 14],
 }
 
 impl InviteCode {
-    pub const LEN: usize = 8 + 32 + 2 + 2 + 32 + 16 + 2 + 8 + 1 + 15;
+    pub const LEN: usize = 8 + 32 + 2 + 2 + 32 + 16 + 2 + 8 + 1 + 1 + 14;
 }
 
 /// Single-use secret invite code PDA (Operator-only, hash-based)
@@ -371,7 +506,7 @@ pub struct GlobalStats {
     pub total_grow_power: u64,
     /// Total number of active farm spaces
     pub total_farm_spaces: u64,
-    /// Total $WEED supply (1 billion)
+    /// Total $WEED supply (240 million)
     pub total_supply: u64,
     /// Current rewards per second (decreases with halving)
     pub current_rewards_per_second: u64,
@@ -536,8 +671,8 @@ impl GlobalStats {
         8 + // last_update_time
         32; // reserve
         
-    /// Initial total supply (1 billion WEED)
-    pub const INITIAL_TOTAL_SUPPLY: u64 = 1_000_000_000 * 1_000_000; // 1B WEED with 6 decimals
+    /// Initial total supply (240 million WEED)
+    pub const INITIAL_TOTAL_SUPPLY: u64 = 240_000_000 * 1_000_000; // 240M WEED with 6 decimals
 }
 
 impl FeePool {
@@ -566,4 +701,81 @@ impl RewardAccount {
         8 + // referral_rewards_l1
         8 + // referral_rewards_l2
         32; // reserve
+}
+
+/// Dynamic farm level configuration
+/// Allows flexible addition of new farm levels
+#[account]
+pub struct FarmLevelConfig {
+    /// Maximum supported level (1-20)
+    pub max_level: u8,
+    /// Capacity for each level (dynamic array)
+    pub capacities: Vec<u8>,
+    /// Pack purchase thresholds for each level (dynamic array)
+    pub upgrade_thresholds: Vec<u32>,
+    /// Optional names for each level (dynamic array)
+    pub level_names: Vec<String>,
+    /// Configuration creation timestamp
+    pub created_at: i64,
+    /// Last update timestamp
+    pub updated_at: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+impl FarmLevelConfig {
+    // Variable size account - calculate based on actual content
+    pub const BASE_LEN: usize = 8 + // discriminator
+        1 + // max_level
+        4 + // capacities vec header
+        4 + // upgrade_thresholds vec header  
+        4 + // level_names vec header
+        8 + // created_at
+        8 + // updated_at
+        32; // reserve
+        
+    /// Calculate space needed for a specific configuration
+    pub fn calculate_space(max_level: u8, level_names: &[String]) -> usize {
+        let capacities_space = max_level as usize; // Vec<u8>
+        let thresholds_space = max_level as usize * 4; // Vec<u32>
+        let names_space = level_names.iter().map(|s| 4 + s.len()).sum::<usize>(); // Vec<String>
+        
+        Self::BASE_LEN + capacities_space + thresholds_space + names_space
+    }
+    
+    /// Get default 5-level configuration space
+    pub const DEFAULT_SPACE: usize = Self::BASE_LEN + 
+        5 + // 5 levels (u8)
+        20 + // 5 thresholds (u32)
+        (4 + 12) * 5; // 5 names (~12 chars each with length prefix)
+}
+
+impl FarmSpace {
+    /// Get capacity for level using dynamic configuration
+    pub fn get_capacity_for_level_with_config(level: u8, config: &FarmLevelConfig) -> Result<u8> {
+        require!(level >= 1 && level <= config.max_level, GameError::InvalidFarmLevel);
+        Ok(config.capacities[(level - 1) as usize])
+    }
+    
+    /// Calculate level from pack purchases using dynamic configuration
+    pub fn calculate_level_from_packs_with_config(total_packs: u32, config: &FarmLevelConfig) -> u8 {
+        for (i, &threshold) in config.upgrade_thresholds.iter().enumerate().rev() {
+            if total_packs >= threshold {
+                return (i + 1) as u8;
+            }
+        }
+        1
+    }
+    
+    /// Auto-upgrade using dynamic configuration
+    pub fn auto_upgrade_with_config(&mut self, total_packs: u32, config: &FarmLevelConfig) -> Result<bool> {
+        let new_level = Self::calculate_level_from_packs_with_config(total_packs, config);
+        if new_level > self.level && new_level <= config.max_level {
+            self.level = new_level;
+            self.capacity = Self::get_capacity_for_level_with_config(new_level, config)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
 }
