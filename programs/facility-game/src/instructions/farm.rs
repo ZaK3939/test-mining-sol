@@ -301,7 +301,7 @@ pub fn migrate_farm_to_new_levels(ctx: Context<MigrateFarmToNewLevels>) -> Resul
     farm.capacity = FarmSpace::get_capacity_for_level_with_config(farm.level, level_config)?;
     
     // If capacity decreased and farm has more seeds than new capacity, need to handle overflow
-    if farm.capacity < old_capacity && farm.seed_count > farm.capacity as u16 {
+    if farm.capacity < old_capacity && farm.seed_count > farm.capacity {
         msg!("Warning: Farm capacity reduced from {} to {}. Seed count: {}", 
              old_capacity, farm.capacity, farm.seed_count);
         // Note: In production, you might want to:

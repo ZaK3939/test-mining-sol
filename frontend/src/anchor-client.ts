@@ -19,6 +19,7 @@ import {
   type ConfigAccount,
   type SeedPackAccount,
   type SeedAccount,
+  type GlobalStatsAccount,
   type TransactionResult,
   type ProgramError,
   isUserStateAccount,
@@ -50,6 +51,9 @@ interface ProgramAccountNamespace {
   };
   inviteCode: {
     fetchNullable(address: PublicKey): Promise<any | null>;
+  };
+  globalStats: {
+    fetchNullable(address: PublicKey): Promise<GlobalStatsAccount | null>;
   };
 }
 
@@ -157,9 +161,16 @@ export class AnchorClient {
   private provider: AnchorProvider;
   private batchFetcher: BatchFetcher;
 
-  constructor(connection: Connection, wallet: WalletAdapter) {
-    // Create provider
-    this.provider = new AnchorProvider(connection, wallet, { preflightCommitment: 'confirmed' });
+  constructor(connection: Connection, wallet: WalletAdapter);
+  constructor(provider: AnchorProvider);
+  constructor(connectionOrProvider: Connection | AnchorProvider, wallet?: WalletAdapter) {
+    // Handle both constructor signatures
+    if (connectionOrProvider instanceof AnchorProvider) {
+      this.provider = connectionOrProvider;
+    } else {
+      // Create provider from connection and wallet
+      this.provider = new AnchorProvider(connectionOrProvider, wallet!, { preflightCommitment: 'confirmed' });
+    }
 
     // Initialize program with IDL - casting required due to Anchor type limitations
     const anchorProgram = new Program(idl as FarmGameIDL, this.provider);
@@ -171,7 +182,7 @@ export class AnchorClient {
     };
 
     // Initialize batch fetcher for performance optimization
-    this.batchFetcher = new BatchFetcher(connection);
+    this.batchFetcher = new BatchFetcher(this.provider.connection);
   }
 
   // Calculate PDAs using shared helper with caching
@@ -191,10 +202,10 @@ export class AnchorClient {
 
   // Initialize config (admin only)
   async initializeConfig(
-    baseRate: BN | null = new BN(100),
-    halvingInterval: BN | null = new BN(604800), // 7 days
+    baseRate: number | null = 100,
+    halvingInterval: number | null = 604800, // 7 days
     treasury?: PublicKey,
-    _protocolReferralAddress?: PublicKey
+    protocolReferralAddress?: PublicKey | null
   ): Promise<string> {
     try {
       logger.info('⚙️ 設定を初期化中...');
@@ -205,8 +216,12 @@ export class AnchorClient {
       // Use admin as treasury if not provided
       const treasuryAccount = treasury || userPublicKey;
 
+      // Convert to BN for Anchor serialization
+      const baseRateBN = baseRate !== null ? new BN(baseRate) : null;
+      const halvingIntervalBN = halvingInterval !== null ? new BN(halvingInterval) : null;
+
       const tx = await this.program.methods
-        .initializeConfig(baseRate, halvingInterval, treasuryAccount)
+        .initializeConfig(baseRateBN, halvingIntervalBN, treasuryAccount, protocolReferralAddress || null)
         .accounts({
           config: pdas.config,
           admin: userPublicKey,
@@ -245,12 +260,14 @@ export class AnchorClient {
 
       const tx = await this.program.methods
         .createRewardMint()
-        .accounts({
+        .accountsPartial({
           rewardMint: pdas.rewardMint,
           mintAuthority: pdas.mintAuthority,
+          transferFeeConfigAuthority: pdas.mintAuthority,
+          withdrawWithheldAuthority: userPublicKey,
           metadataAccount: metadataAccount,
           admin: userPublicKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
+          tokenProgram: new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'),
           systemProgram: SystemProgram.programId,
           rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
           tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
@@ -262,6 +279,32 @@ export class AnchorClient {
     } catch (error) {
       const programError = this.handleProgramError(error);
       logger.error(`報酬ミント作成エラー: ${programError.message}`);
+      throw programError;
+    }
+  }
+
+  // Initialize global stats (admin only)
+  async initializeGlobalStats(): Promise<string> {
+    try {
+      logger.info('📊 グローバル統計を初期化中...');
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      const tx = await this.program.methods
+        .initializeGlobalStats()
+        .accounts({
+          globalStats: pdas.globalStats,
+          admin: userPublicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      logger.success(`グローバル統計初期化成功! トランザクション: ${tx}`);
+      return tx;
+    } catch (error) {
+      const programError = this.handleProgramError(error);
+      logger.error(`グローバル統計初期化エラー: ${programError.message}`);
       throw programError;
     }
   }
@@ -407,8 +450,8 @@ export class AnchorClient {
         );
       }
 
-      // Build transaction
-      let txBuilder = this.program.methods.claimReward().accounts({
+      // Build transaction accounts - omit optional referrer accounts for now
+      const accounts: Record<string, PublicKey> = {
         userState: pdas.userState,
         config: pdas.config,
         globalStats: globalStatsPDA,
@@ -417,7 +460,9 @@ export class AnchorClient {
         userTokenAccount: userTokenAccount,
         user: userPublicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
-      });
+      };
+      
+      let txBuilder = this.program.methods.claimRewardWithReferralRewards().accountsPartial(accounts);
 
       // Add ATA creation instruction if needed
       if (createATAInstruction && txBuilder.preInstructions) {
@@ -1152,6 +1197,39 @@ export class AnchorClient {
     cacheManager.invalidateUserCache(userPublicKey);
   }
 
+  // Fetch global statistics for network share calculation
+  async fetchGlobalStats(): Promise<{
+    totalGrowPower: number;
+    totalFarmSpaces: number;
+    totalSupply: number;
+    currentRewardsPerSecond: number;
+    lastUpdateTime: number;
+  } | null> {
+    try {
+      const [globalStatsPDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('global_stats')],
+        this.program.programId
+      );
+
+      const globalStats = await this.program.account.globalStats?.fetchNullable?.(globalStatsPDA);
+      if (!globalStats) {
+        logger.warn('Global stats account not found - may not be initialized yet');
+        return null;
+      }
+
+      return {
+        totalGrowPower: safeBNToNumber(globalStats.totalGrowPower),
+        totalFarmSpaces: safeBNToNumber(globalStats.totalFarmSpaces),
+        totalSupply: safeBNToNumber(globalStats.totalSupply),
+        currentRewardsPerSecond: safeBNToNumber(globalStats.currentRewardsPerSecond),
+        lastUpdateTime: safeBNToNumber(globalStats.lastUpdateTime),
+      };
+    } catch (error) {
+      logger.error(`グローバル統計取得エラー: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
+
   // Performance monitoring
   async measureFetchPerformance(userPublicKey: PublicKey): Promise<{
     batchTime: number;
@@ -1229,5 +1307,62 @@ export class AnchorClient {
   // Get program ID
   getProgramId(): PublicKey {
     return this.program.programId;
+  }
+
+  // ===== ADMIN FUNCTIONS =====
+
+  /**
+   * Update seed pack cost (admin only)
+   * Allows dynamic adjustment of WEED price for seed packs
+   * 
+   * @param newSeedPackCost - New cost in WEED tokens (with 6 decimals)
+   * @returns Transaction result
+   * 
+   * @example
+   * // Set seed pack cost to 500 WEED
+   * await client.updateSeedPackCost(500_000_000);
+   */
+  async updateSeedPackCost(newSeedPackCost: number): Promise<TransactionResult> {
+    try {
+      logger.info('Updating seed pack cost', { newSeedPackCost });
+      
+      // Validation
+      if (newSeedPackCost <= 0) {
+        throw new Error('Seed pack cost must be greater than 0');
+      }
+      
+      if (newSeedPackCost > 10_000 * 1_000_000) {
+        throw new Error('Seed pack cost cannot exceed 10,000 WEED');
+      }
+
+      const configPDA = this.pdas.config;
+
+      const tx = await this.program.methods
+        .updateSeedPackCost(new BN(newSeedPackCost))
+        .accounts({
+          config: configPDA,
+          admin: this.provider.publicKey,
+        })
+        .rpc();
+
+      logger.info('Seed pack cost updated successfully', { 
+        transaction: tx,
+        newCostWeed: newSeedPackCost / 1_000_000
+      });
+
+      return {
+        success: true,
+        transaction: tx,
+        message: `Seed pack cost updated to ${newSeedPackCost / 1_000_000} WEED`,
+      };
+
+    } catch (error) {
+      logger.error('Failed to update seed pack cost:', error);
+      return {
+        success: false,
+        error: this.handleProgramError(error),
+        message: 'Failed to update seed pack cost',
+      };
+    }
   }
 }

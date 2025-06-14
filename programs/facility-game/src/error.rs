@@ -24,8 +24,14 @@ pub enum GameError {
     #[msg("Invalid configuration")]
     InvalidConfig,
     
+    #[msg("Invalid farm level")]
+    InvalidFarmLevel,
+    
     #[msg("Unauthorized")]
     Unauthorized,
+    
+    #[msg("Unauthorized user access")]
+    UnauthorizedUser,
     
     #[msg("Invalid referrer")]
     InvalidReferrer,

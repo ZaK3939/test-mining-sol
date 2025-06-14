@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Transfer, TokenAccount, Mint};
-use anchor_spl::token_2022::{self as token_2022, Token2022, MintTo, TransferChecked};
+// Removed standard SPL token imports - using Token 2022 only
+use anchor_spl::token_2022::{self as token_2022, Token2022, MintTo as MintTo2022, TransferChecked};
 use crate::state::*;
 use crate::error::*;
 use anchor_lang::solana_program::hash::hash;
@@ -10,7 +10,6 @@ use anchor_lang::solana_program::hash::hash;
 pub use crate::validation::{
     validate_user_ownership,
     validate_token_balance,
-    validate_farm_space_capacity,
     validate_has_farm_space,
     validate_has_grow_power,
     validate_sufficient_balance,
@@ -18,11 +17,11 @@ pub use crate::validation::{
 
 // ===== TOKEN TRANSFER HELPERS =====
 
-/// Transfer tokens between accounts using CPI with transfer fee support
+/// Transfer tokens between accounts using CPI with transfer fee support (Token 2022)
 pub fn transfer_tokens_with_cpi<'info>(
-    from: &Account<'info, TokenAccount>,
-    to: &Account<'info, TokenAccount>,
-    mint: &Account<'info, Mint>,
+    from: &UncheckedAccount<'info>,
+    to: &UncheckedAccount<'info>,
+    mint: &UncheckedAccount<'info>,
     authority: &Signer<'info>,
     token_program: &Program<'info, Token2022>,
     amount: u64,
@@ -159,16 +158,16 @@ pub fn validate_referral_scenario(
     Ok((claimant_amount, level1_amount, level2_amount))
 }
 
-/// Mint tokens to a user account
+/// Mint tokens to a user account using Token 2022
 pub fn mint_tokens_to_user<'info>(
-    reward_mint: &Account<'info, Mint>,
-    user_token_account: &Account<'info, TokenAccount>,
+    reward_mint: &UncheckedAccount<'info>,
+    user_token_account: &UncheckedAccount<'info>,
     mint_authority: &UncheckedAccount<'info>,
     token_program: &Program<'info, Token2022>,
     authority_bump: u8,
     amount: u64,
 ) -> Result<()> {
-    let cpi_accounts = MintTo {
+    let cpi_accounts = MintTo2022 {
         mint: reward_mint.to_account_info(),
         to: user_token_account.to_account_info(),
         authority: mint_authority.to_account_info(),

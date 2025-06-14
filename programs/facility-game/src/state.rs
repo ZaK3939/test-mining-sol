@@ -82,56 +82,57 @@ pub struct FarmSpace {
 
 /// Dynamic probability table for seed generation
 /// Allows admin to update probabilities without code changes
+/// Supports up to 16 seed types for extensive variety and frequent updates
 #[account]
 pub struct ProbabilityTable {
-    /// Table version number for tracking updates
+    /// Table version number for tracking updates (supports frequent updates)
     pub version: u32,
-    /// Number of seed types in this table (6 for Table 1, 9 for Table 2)
+    /// Number of seed types in this table (1-16 for maximum flexibility)
     pub seed_count: u8,
-    /// Grow power values for each seed type (max 9 types)
-    pub grow_powers: [u64; 9],
-    /// Probability thresholds for cumulative distribution (max 9 types)
-    pub probability_thresholds: [u16; 9],
-    /// Human-readable probability percentages (max 9 types)
-    pub probability_percentages: [f32; 9],
+    /// Grow power values for each seed type (max 16 types)
+    pub grow_powers: [u64; 16],
+    /// Probability thresholds for cumulative distribution (max 16 types)
+    pub probability_thresholds: [u16; 16],
+    /// Human-readable probability percentages (max 16 types)
+    pub probability_percentages: [f32; 16],
     /// Expected value of a pack with this table
     pub expected_value: u64,
-    /// Table name/description
+    /// Table name/description (e.g., "SpringEvent2024", "RarityFest")
     pub name: [u8; 32],
     /// Creation timestamp
     pub created_at: i64,
     /// Last update timestamp
     pub updated_at: i64,
     /// Reserved for future expansion
-    pub reserve: [u8; 32],
+    pub reserve: [u8; 16], // Reduced due to larger arrays
 }
 
 impl ProbabilityTable {
     pub const LEN: usize = 8 + // discriminator
         4 + // version
         1 + // seed_count
-        72 + // grow_powers (9 * 8)
-        18 + // probability_thresholds (9 * 2)
-        36 + // probability_percentages (9 * 4)
+        128 + // grow_powers (16 * 8)
+        32 + // probability_thresholds (16 * 2)
+        64 + // probability_percentages (16 * 4)
         8 + // expected_value
         32 + // name
         8 + // created_at
         8 + // updated_at
-        32; // reserve
+        16; // reserve (reduced due to larger arrays)
 
     /// Initialize with Table 1 settings (6 seeds)
     pub fn init_table_1() -> Self {
         let mut table = Self {
             version: 1,
             seed_count: 6,
-            grow_powers: [0; 9],
-            probability_thresholds: [0; 9],
-            probability_percentages: [0.0; 9],
+            grow_powers: [0; 16],
+            probability_thresholds: [0; 16],
+            probability_percentages: [0.0; 16],
             expected_value: 0,
             name: [0; 32],
             created_at: 0,
             updated_at: 0,
-            reserve: [0; 32],
+            reserve: [0; 16],
         };
         
         // Table 1 settings
@@ -140,8 +141,8 @@ impl ProbabilityTable {
         table.probability_percentages[0..6].copy_from_slice(&[43.0, 25.0, 14.0, 9.0, 6.0, 3.0]);
         table.expected_value = 421; // Calculated expected value
         
-        // Set name "Table1"
-        let name_bytes = b"Table1";
+        // Set name "StandardTable1"
+        let name_bytes = b"StandardTable1";
         table.name[0..name_bytes.len()].copy_from_slice(name_bytes);
         
         table
@@ -268,69 +269,97 @@ impl FarmSpace {
     
 }
 
-/// Seed types with fixed grow power and probabilities
+/// Seed types with dynamic grow power and probabilities (supports up to 16 types)
 #[derive(Clone, Copy, PartialEq, Eq, AnchorSerialize, AnchorDeserialize, Debug)]
 pub enum SeedType {
-    Seed1,      // Grow Power: 100 - 42.23%
-    Seed2,      // Grow Power: 180 - 24.44%
-    Seed3,      // Grow Power: 420 - 13.33%
-    Seed4,      // Grow Power: 720 - 8.33%
-    Seed5,      // Grow Power: 1000 - 5.56%
-    Seed6,      // Grow Power: 5000 - 3.33%
-    Seed7,      // Grow Power: 15000 - 1.33%
-    Seed8,      // Grow Power: 30000 - 0.89%
-    Seed9,      // Grow Power: 60000 - 0.56%
+    Seed1,      // Grow Power: Dynamic (from probability table)
+    Seed2,      // Grow Power: Dynamic (from probability table)
+    Seed3,      // Grow Power: Dynamic (from probability table)
+    Seed4,      // Grow Power: Dynamic (from probability table)
+    Seed5,      // Grow Power: Dynamic (from probability table)
+    Seed6,      // Grow Power: Dynamic (from probability table)
+    Seed7,      // Grow Power: Dynamic (from probability table)
+    Seed8,      // Grow Power: Dynamic (from probability table)
+    Seed9,      // Grow Power: Dynamic (from probability table)
+    Seed10,     // Grow Power: Dynamic (from probability table)
+    Seed11,     // Grow Power: Dynamic (from probability table)
+    Seed12,     // Grow Power: Dynamic (from probability table)
+    Seed13,     // Grow Power: Dynamic (from probability table)
+    Seed14,     // Grow Power: Dynamic (from probability table)
+    Seed15,     // Grow Power: Dynamic (from probability table)
+    Seed16,     // Grow Power: Dynamic (from probability table)
 }
 
 impl SeedType {
-    /// Optimized lookup table for grow power values
-    const GROW_POWERS: [u64; 9] = [100, 180, 420, 720, 1000, 5000, 15000, 30000, 60000];
+    /// Default grow power values (fallback when probability table not available)
+    /// Note: In production, grow powers should come from ProbabilityTable
+    const DEFAULT_GROW_POWERS: [u64; 16] = [
+        100, 180, 420, 720, 1000, 5000, 15000, 30000,     // Original 8 types
+        60000, 120000, 250000, 500000, 1000000, 2000000, 4000000, 10000000 // Extended 8 types
+    ];
     
-    /// Cumulative probability thresholds for weighted random selection
-    /// Values out of 10000 for precise percentage control
-    const PROBABILITY_THRESHOLDS: [u16; 9] = [4222, 6666, 7999, 8832, 9388, 9721, 9854, 9943, 10000];
-    
-    /// Get grow power efficiently using array lookup
-    pub fn get_grow_power(&self) -> u64 {
-        Self::GROW_POWERS[*self as usize]
+    /// Get grow power from probability table (preferred method)
+    /// Falls back to default values if table not available
+    pub fn get_grow_power_from_table(&self, table: &ProbabilityTable) -> u64 {
+        let index = *self as usize;
+        if index < table.seed_count as usize {
+            table.grow_powers[index]
+        } else {
+            self.get_default_grow_power()
+        }
     }
     
-    /// Convert random value to seed type using weighted probabilities
-    /// Uses linear search for small array - more efficient than binary search for 9 elements
-    pub fn from_random(random: u64) -> Self {
+    /// Get default grow power (fallback method)
+    pub fn get_default_grow_power(&self) -> u64 {
+        Self::DEFAULT_GROW_POWERS[*self as usize]
+    }
+    
+    /// Convert random value to seed type using probability table
+    pub fn from_random_with_table(random: u64, table: &ProbabilityTable) -> Self {
         let value = (random % 10000) as u16;
         
-        for (i, &threshold) in Self::PROBABILITY_THRESHOLDS.iter().enumerate() {
-            if value < threshold {
-                return unsafe { std::mem::transmute(i as u8) };
+        for i in 0..table.seed_count as usize {
+            if value < table.probability_thresholds[i] {
+                return Self::from_index(i as u8).unwrap_or(SeedType::Seed1);
             }
         }
         
-        // Fallback to highest rarity (should never happen with proper thresholds)
-        SeedType::Seed9
+        // Fallback to last seed type in table
+        Self::from_index((table.seed_count - 1) as u8).unwrap_or(SeedType::Seed1)
     }
     
-    /// Iterator-friendly array of all seed types
-    pub const fn all_types() -> [SeedType; 9] {
+    /// Legacy method for backward compatibility (uses default table)
+    pub fn from_random(random: u64) -> Self {
+        let table = ProbabilityTable::init_table_1();
+        Self::from_random_with_table(random, &table)
+    }
+    
+    /// Iterator-friendly array of all seed types (16 types)
+    pub const fn all_types() -> [SeedType; 16] {
         [
-            SeedType::Seed1, SeedType::Seed2, SeedType::Seed3,
-            SeedType::Seed4, SeedType::Seed5, SeedType::Seed6,
-            SeedType::Seed7, SeedType::Seed8, SeedType::Seed9,
+            SeedType::Seed1, SeedType::Seed2, SeedType::Seed3, SeedType::Seed4,
+            SeedType::Seed5, SeedType::Seed6, SeedType::Seed7, SeedType::Seed8,
+            SeedType::Seed9, SeedType::Seed10, SeedType::Seed11, SeedType::Seed12,
+            SeedType::Seed13, SeedType::Seed14, SeedType::Seed15, SeedType::Seed16,
         ]
     }
     
-    /// Get display probability as percentage (for UI/documentation)
-    pub fn get_probability_percent(&self) -> f32 {
-        const PROBABILITIES: [f32; 9] = [42.23, 24.44, 13.33, 8.33, 5.56, 3.33, 1.33, 0.89, 0.56];
-        PROBABILITIES[*self as usize]
+    /// Get probability from table (preferred method)
+    pub fn get_probability_from_table(&self, table: &ProbabilityTable) -> f32 {
+        let index = *self as usize;
+        if index < table.seed_count as usize {
+            table.probability_percentages[index]
+        } else {
+            0.0
+        }
     }
     
-    /// Validate seed type enum value
+    /// Validate seed type enum value (supports 16 types)
     pub fn is_valid(value: u8) -> bool {
-        value < 9
+        value < 16
     }
     
-    /// Create SeedType from index (for dynamic probability tables)
+    /// Create SeedType from index (for dynamic probability tables, supports 16 types)
     pub fn from_index(index: u8) -> Result<SeedType> {
         match index {
             0 => Ok(SeedType::Seed1),
@@ -342,6 +371,13 @@ impl SeedType {
             6 => Ok(SeedType::Seed7),
             7 => Ok(SeedType::Seed8),
             8 => Ok(SeedType::Seed9),
+            9 => Ok(SeedType::Seed10),
+            10 => Ok(SeedType::Seed11),
+            11 => Ok(SeedType::Seed12),
+            12 => Ok(SeedType::Seed13),
+            13 => Ok(SeedType::Seed14),
+            14 => Ok(SeedType::Seed15),
+            15 => Ok(SeedType::Seed16),
             _ => Err(crate::error::GameError::InvalidConfig.into()),
         }
     }
@@ -530,7 +566,7 @@ pub struct FeePool {
 }
 
 /// User's seed inventory management
-/// Tracks all seeds owned by a user with type-based limits
+/// Tracks all seeds owned by a user with type-based limits (supports 16 seed types)
 #[account]
 pub struct SeedStorage {
     /// Storage owner's public key
@@ -539,10 +575,10 @@ pub struct SeedStorage {
     pub seed_ids: Vec<u64>,
     /// Current seed count for quick access
     pub total_seeds: u32,
-    /// Count of each seed type (9 types, max 100 each)
-    pub seed_type_counts: [u16; 9],
+    /// Count of each seed type (16 types, max 100 each)
+    pub seed_type_counts: [u16; 16],
     /// Reserved bytes for future features
-    pub reserve: [u8; 16], // Reduced due to seed_type_counts addition
+    pub reserve: [u8; 2], // Reduced due to larger seed_type_counts array
 }
 
 impl SeedStorage {
@@ -641,7 +677,7 @@ impl SeedStorage {
     
     /// Initialize seed type counts (for existing accounts)
     pub fn initialize_type_counts(&mut self) {
-        self.seed_type_counts = [0; 9];
+        self.seed_type_counts = [0; 16];
     }
 }
 
@@ -688,9 +724,9 @@ impl SeedStorage {
         32 + // owner
         4 + (8 * 2_000) + // seed_ids (Vec<u64> with max 2,000 seeds)
         4 + // total_seeds (u32 for 2,000+ seeds)
-        (2 * 9) + // seed_type_counts (9 x u16)
-        16; // reserve
-        // Total: 16,076 bytes (~16KB) - Affordable, rent ~0.12 SOL
+        (2 * 16) + // seed_type_counts (16 x u16)
+        2; // reserve (reduced due to larger seed_type_counts)
+        // Total: 16,090 bytes (~16KB) - Affordable, rent ~0.12 SOL
 }
 
 impl RewardAccount {

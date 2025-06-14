@@ -1,195 +1,246 @@
-# Solana Facility Game - プロジェクト概要
+# Facility Game - システム概要
 
-## 🎯 プロジェクト概要
+## プロジェクト概要
 
-Solana Facility Game は Solana ブロックチェーン上で動作する高度な農業シミュレーションゲームです。プレイヤーは農場を管理し、様々な種を育てて、WEED トークンを獲得することができます。このゲームは、持続可能な経済メカニズム、多層紹介システム、先進的なストレージ管理を特徴としています。
+Facility Game は、Solana ブロックチェーン上で動作する農場経営とシード育成を組み合わせたゲームです。プレイヤーは農場スペースを購入し、様々な種類のシードを植えて成長力（Grow Power）を蓄積し、定期的に WEED トークンを報酬として受け取ることができます。
 
-**プログラム ID**: `FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B`
+## 核心コンセプト
 
-## 🌟 主要機能
+### 1. 農場システム
 
-- **🚀 自動アップグレード農場**: パック購入数に基づく自動農場アップグレード
-- **📦 先進的ストレージ**: 合計 2,000 個の容量、種類別制限、自動廃棄機能
-- **🔐 ハッシュベース招待**: プライバシー保護招待システム
-- **💰 SPL Token 2022**: 2%転送手数料を含む統合システム
-- **🤝 多層紹介システム**: L1(10%)、L2(5%)の紹介報酬
-- **🎲 Switchboard VRF**: 検証可能なランダム種生成
-- **🔬 数学的精度**: 128 ビット演算によるオーバーフロー保護
+- **農場スペース**: 0.5 SOL で購入、初期容量 4
+  - `constants.rs:24` `FARM_SPACE_COST_SOL = 500_000_000` (0.5 SOL)
+  - `state.rs:185` `DEFAULT_FARM_SPACE_COST`でも定義
+- **レベルシステム**: 自動アップグレード（レベル 1-5）
+  - `constants.rs:55-59` `FARM_CAPACITIES = [4, 6, 8, 10, 12]`
+  - `constants.rs:61-65` `FARM_UPGRADE_THRESHOLDS = [0, 30, 100, 300, 500]`
+- **成長メカニズム**: シードパック購入数に応じた容量拡張
+  - `state.rs:205-215` `increment_pack_purchases()` でパック数追跡
+  - `instructions/seeds.rs:329-342` で自動アップグレード実行
 
-## 📊 アーキテクチャ
+### 2. シードエコシステム
 
-### 🏗️ プログラム構造
+- **9 種類のシード**: Seed1（100 GP）〜Seed9（60,000 GP）
+  - Table 1 (6 種類): `constants.rs:98-109` `SEED_GROW_POWERS = [100, 180, 420, 720, 1000, 5000]`
+  - Table 2 (9 種類): `state.rs:286-287` `GROW_POWERS = [100, 180, 420, 720, 1000, 5000, 15000, 30000, 60000]`
+- **確率ベース取得**: ミステリーシードパックから入手
+  - `constants.rs:111-122` `SEED_PROBABILITY_THRESHOLDS = [4300, 6800, 8200, 9100, 9700, 10000]`
+  - `constants.rs:124-128` `SEED_PROBABILITIES = [43.0, 25.0, 14.0, 9.0, 6.0, 3.0]`
+- **Switchboard VRF**: 真の乱数生成による公正性確保
+  - `instructions/seeds.rs` で VRF 統合（現在簡略化実装）
+- **植付システム**: 農場に植えて Grow Power を蓄積
+  - `instructions/farm.rs` の `plant_seed()` / `remove_seed()`
+
+### 3. 経済システム
+
+- **比例報酬分配**: 個人の Grow Power ÷ 全体の Grow Power × 基本レート
+  - `economics.rs:28-55` `calculate_user_share_reward()` で実装
+- **半減期メカニズム**: 7 日間（604,800 秒）毎に基本レートが半減
+  - `constants.rs:18` `DEFAULT_HALVING_INTERVAL = 604800` (7 日間)
+  - `economics.rs:59-111` `calculate_rewards_across_halving()` で処理
+- **総供給量制限**: 240,000,000 WEED 上限
+  - `constants.rs:49` `TOTAL_WEED_SUPPLY = 240_000_000 * 1_000_000`
+- **転送手数料**: 2%（SPL Token 2022 使用）
+  - `constants.rs:36` `TRADING_FEE_PERCENTAGE = 2`
+
+### 4. 招待システム
+
+- **階層報酬**: L1 紹介者 10%、L2 紹介者 5%の報酬分配
+  - `constants.rs:155` `LEVEL1_REFERRAL_PERCENTAGE = 10`
+  - `constants.rs:158` `LEVEL2_REFERRAL_PERCENTAGE = 5`
+- **プライバシー保護**: ハッシュベース招待コード
+  - `instructions/invite.rs` でハッシュ検証実装
+- **使用制限**: 一般ユーザー 5 回、オペレーター 1024 回
+  - `constants.rs:42` `MAX_INVITE_LIMIT = 5`
+
+## 技術アーキテクチャ
+
+### ブロックチェーン基盤
+
+- **Solana**: 高速・低コストな取引処理
+- **Anchor Framework**: 型安全なスマートコントラクト開発
+  - `lib.rs:12` プログラム ID `GX2tJDB1bn73AUkC8brEru4qPN2JSTEd8A1cLAz81oZc`
+- **PDA（Program Derived Address）**: 決定論的アドレス生成
+  - `constants.rs:190-242` 全 PDA シードパターン定義
+
+### セキュリティ設計
+
+- **権限分離**: 管理者・オペレーター・ユーザーの明確な役割分担
+  - `validation/user_validation.rs` `validate_user_ownership()`
+  - `validation/admin_validation.rs` 管理者権限検証
+- **所有権検証**: 全ての操作でユーザー所有権を確認
+  - `utils.rs:10-16` 検証ヘルパー関数群
+- **算術安全性**: checked_arithmetic 使用によるオーバーフロー防止
+  - `error.rs:21-23` `CalculationOverflow` エラー定義
+  - `economics.rs` 全計算で checked 演算使用
+- **供給量管理**: ミント権限の PDA による厳格な制御
+  - `validation/economic_validation.rs` `validate_supply_cap()`
+
+### 外部サービス統合
+
+- **Switchboard VRF**: 検証可能な真乱数生成
+  - `instructions/seeds.rs:4` VRF インポート（現在コメントアウト）
+- **Metaplex**: WEED トークンメタデータ管理
+  - `frontend/anchor-client.ts:250-275` メタデータ作成実装
+- **SPL Token 2022**: 転送手数料拡張機能
+  - `utils.rs:3` Token2022 インポート
+  - `utils.rs:19-20` 転送手数料対応
+
+## ゲームフロー
+
+### 初回セットアップ
+
+1. **ユーザー登録**: `init_user`命令で基本アカウント作成
+2. **農場購入**: `buy_farm_space`で 0.5 SOL 支払い、初期シード付与
+3. **トークンアカウント作成**: WEED 受取用の ATA 作成
+
+### 日常プレイサイクル
+
+1. **シードパック購入**: 300 WEED + VRF 手数料でランダムシード取得
+2. **パック開封**: Switchboard VRF による乱数生成でシード決定
+3. **シード植付**: 農場容量内でシードを配置
+4. **報酬請求**: 時間経過に応じた WEED 報酬受取
+
+### 成長戦略
+
+1. **効率的配置**: 高 Grow Power シードの優先植付
+2. **容量拡張**: シードパック購入による農場レベル自動アップ
+3. **招待活動**: 紹介報酬による追加収入
+4. **市場参加**: 他プレイヤーとの WEED 取引
+
+## データ構造設計
+
+### アカウント階層
 
 ```
-programs/facility-game/src/
-├── lib.rs                      # メインプログラムエントリ（17の命令）
-├── state.rs                    # アカウント構造とデータモデル
-├── error.rs                    # カスタムエラー定義
-├── constants.rs                # ゲーム定数の集中管理
-├── economics.rs                # 経済計算と数式
-├── utils.rs                    # ヘルパー関数とユーティリティ
-├── instructions/               # 命令実装
-│   ├── admin.rs                # 管理者命令
-│   ├── user.rs                 # ユーザー管理命令
-│   ├── farm.rs                 # 農場管理命令
-│   ├── referral.rs             # 紹介報酬命令
-│   ├── seeds.rs                # シード系命令
-│   └── invite.rs               # ハッシュベース招待システム
-└── validation/                 # ビジネスルール検証
-    ├── admin_validation.rs     # 管理者権限検証
-    ├── economic_validation.rs  # 経済検証
-    ├── game_validation.rs      # ゲームロジック検証
-    ├── time_validation.rs      # 時間関連検証
-    └── user_validation.rs      # ユーザー検証
+Program
+├── Config（グローバル設定）              - state.rs:10-41
+├── GlobalStats（全体統計）               - state.rs:503-517
+├── ProbabilityTable（確率設定）          - state.rs:85-107
+└── User別
+    ├── UserState（基本情報）             - state.rs:45-63
+    ├── FarmSpace（農場データ）           - state.rs:67-81
+    ├── SeedStorage（シード保管庫）       - state.rs:534-546
+    ├── Seed × N（個別シード）            - state.rs:351-369
+    ├── SeedPack × N（パック履歴）        - state.rs:372-396
+    └── InviteCode × N（招待コード）      - state.rs:426-448
 ```
 
-### 🔑 PDA シードパターン
+### PDA シード設計
 
-- Config: `["config"]`
-- UserState: `["user", user_pubkey]`
-- FarmSpace: `["farm_space", user_pubkey]`
-- SeedStorage: `["seed_storage", user_pubkey]`
-- InviteCode: `["invite", inviter_pubkey, sha256(invite_code)]`
-- RewardMint: `["reward_mint"]`
-- MintAuthority: `["mint_authority"]`
+- `Config`: `["config"]` - `constants.rs:191`
+- `UserState`: `["user", user_pubkey]` - `constants.rs:194`
+- `FarmSpace`: `["farm_space", user_pubkey]` - `constants.rs:197`
+- `Seed`: `["seed", user_pubkey, seed_id]` - `constants.rs:200-203`
+- `GlobalStats`: `["global_stats"]` - `constants.rs:206`
+- 全 PDA パターン: `constants.rs:190-242`
 
-## 🎮 ゲームメカニクス
+## 経済バランス
 
-### 🚀 自動アップグレードシステム
-
-農場は累積パック購入数に基づいて自動的にアップグレードされます：
-
-- **レベル 1**: 0 パック（容量: 4 種）
-- **レベル 2**: 30 パック（容量: 6 種）
-- **レベル 3**: 100 パック（容量: 8 種）
-- **レベル 4**: 300 パック（容量: 10 種）
-- **レベル 5**: 500 パック（容量: 12 種）
-
-### 📦 先進的ストレージシステム
-
-- **総容量**: 2,000 種
-- **種類別制限**: 各種類最大 100 個
-- **自動廃棄**: 制限超過時の自動処理
-- **レント効率**: 種あたりのコスト比率維持
-
-### 🌱 シードシステム
-
-9 種類の種が存在し、それぞれ異なるレア度と成長力を持ちます：
-
-- **Seed1**: 100GP（42.23%）
-- **Seed2**: 180GP（24.44%）
-- **Seed3**: 420GP（13.33%）
-- **Seed4**: 720GP（8.33%）
-- **Seed5**: 1000GP（5.56%）
-- **Seed6**: 5000GP（3.33%）
-- **Seed7**: 15000GP（1.33%）
-- **Seed8**: 30000GP（0.89%）
-- **Seed9**: 60000GP（0.56%）
-
-## 💰 経済システム
-
-### 💎 報酬配分システム
+### 報酬計算式
 
 ```
-ユーザー報酬 = (ユーザー成長力 / 総成長力) × 基本レート × 経過時間
+個人報酬 = (個人GP / 総GP) × 基本レート × 経過時間
+紹介報酬 = 被紹介者報酬 × 紹介レベル報酬率
 ```
 
-### 🤝 多層紹介システム
+- 実装: `economics.rs:28-55` `calculate_user_share_reward()`
+- 紹介報酬: `economics.rs` で 10%/5%の分配計算
 
-- **レベル 1（直接招待）**: 10%
-- **レベル 2（間接招待）**: 5%
-- **最大深度**: 2 レベル
+### 確率システム（Table 1）
 
-### 💸 SPL Token 2022 手数料システム
+| シード | Grow Power | 確率 | 累積確率 |
+| ------ | ---------- | ---- | -------- |
+| Seed1  | 100        | 43%  | 43%      |
+| Seed2  | 180        | 25%  | 68%      |
+| Seed3  | 420        | 14%  | 82%      |
+| Seed4  | 720        | 9%   | 91%      |
+| Seed5  | 1,000      | 6%   | 97%      |
+| Seed6  | 5,000      | 3%   | 100%     |
 
-- **転送手数料**: 2.00%（200 ベーシスポイント）
-- **最大手数料**: 転送あたり 1,000 WEED
-- **自動収集**: 国庫への自動収集
+- データ定義: `constants.rs:98-128`
+- 確率判定: `state.rs:300-311` `from_random()`
 
-## 🔐 招待システム
+### 農場拡張システム
 
-### ハッシュベース設計
+| レベル | 容量 | 必要パック購入数 |
+| ------ | ---- | ---------------- |
+| 1      | 4    | 0                |
+| 2      | 6    | 30               |
+| 3      | 8    | 100              |
+| 4      | 10   | 300              |
+| 5      | 12   | 500              |
 
-招待コードは SHA256 でハッシュ化され、プライバシーを保護します：
+- 容量定義: `constants.rs:55-59` `FARM_CAPACITIES`
+- 閾値定義: `constants.rs:61-65` `FARM_UPGRADE_THRESHOLDS`
+- アップグレード: `state.rs:247-256` `calculate_level_from_packs()`
 
-- **オペレーター招待**: 1024 回使用限度（大量マーケティング用）
-- **ユーザー招待**: 5 回使用限度（友人招待用）
+## 運用管理
 
-## 🎲 Switchboard VRF 統合
+### 管理者権限
 
-### 検証可能なランダム性
+- システム設定変更
+  - `instructions/admin.rs` `update_config()` - config 更新
+  - `instructions/admin.rs` `initialize_config()` - 初期設定
+- 確率テーブル更新
+  - `instructions/admin.rs` `update_probability_table()` - 確率変更
+- 緊急停止機能
+  - `validation/admin_validation.rs` 権限検証機能
+- トレジャリー管理
+  - `state.rs:19` Config 内 treasury 設定
 
-- **暗号学的証明**: サードパーティオラクル検証
-- **透明な確率**: オンチェーン種レア度検証
-- **操作防止**: コミット・リビールパターン
-- **品質保証**: 真のランダム性 vs 疑似ランダム
+### オペレーター権限
 
-## 📚 完全命令セット
+- 無制限招待コード作成
+  - `instructions/invite.rs` オペレーター 1024 回制限
+  - `constants.rs:42` 一般ユーザー 5 回制限
+- 特別イベント招待発行
+  - `state.rs:455-479` SingleUseSecretInvite
+- ユーザーサポート用機能
+  - `state.rs:36` Config 内 operator 設定
 
-### 👨‍💼 管理者命令（5 個）
+### 監査機能
 
-1. `initialize_config` - システム設定初期化
-2. `create_reward_mint` - WEED トークンミント作成
-3. `initialize_global_stats` - グローバル統計初期化
-4. `initialize_fee_pool` - 手数料プール初期化
-5. `update_config` - システム設定更新
+- 全取引ログ記録
+  - 各 instruction 内で msg!()によるログ出力
+- 供給量追跡
+  - `state.rs:36` Config 内 total_supply_minted
+  - `validation/economic_validation.rs` 供給量検証
+- 確率検証システム
+  - `state.rs:109-164` ProbabilityTable 検証機能
+- パフォーマンス監視
+  - `frontend/utils/cache-manager.ts` キャッシュ最適化
 
-### 👤 ユーザー管理命令（1 個）
+## 拡張可能性
 
-6. `init_user` - ユーザーアカウント初期化
+### 将来計画
 
-### 🏭 農場管理命令（1 個）
+- **新シード追加**: Table 2（9 種類）への拡張対応済み
+  - `state.rs:286-287` Table 2 データ準備完了
+  - `state.rs:109-164` 動的確率テーブル対応
+- **農場レベル拡張**: 動的レベル設定により 20 レベルまで対応可能
+  - `state.rs:708-751` FarmLevelConfig 実装
+  - `state.rs:753-781` 動的レベル計算機能
+- **特別イベント**: 期間限定確率テーブル切替
+  - ProbabilityTable 版管理システム実装済み
+- **ガバナンス**: DAO による重要パラメータ決定
+  - 管理者権限の段階的移行準備
 
-7. `buy_farm_space` - 農場スペース購入（0.5 SOL）
+## 重要な実装詳細
 
-### 💰 報酬システム命令（3 個）
+### プログラム ID
 
-8. `claim_reward_with_referral_rewards` - 統合報酬請求
-9. `accumulate_referral_reward` - 紹介報酬蓄積
-10. `view_pending_referral_rewards` - 未請求紹介報酬表示
+- **現在**: `GX2tJDB1bn73AUkC8brEru4qPN2JSTEd8A1cLAz81oZc` (`lib.rs:12`)
 
-### 🔐 招待システム命令（2 個）
+### ストレージ制限
 
-11. `create_invite_code` - ハッシュベース招待コード作成
-12. `use_invite_code` - ハッシュベース招待コード使用
+- **最大シード保存**: 2,000 個/ユーザー (`constants.rs:82`)
+- **種類別上限**: 100 個/種類 (`constants.rs:87`)
+- **バッチ処理上限**: 100 個/操作 (`constants.rs:175-178`)
 
-### 🌱 シードシステム命令（7 個）
+### VRF 統合状況
 
-13. `initialize_seed_storage` - 先進的ストレージ初期化
-14. `purchase_seed_pack` - ミステリーパック購入
-15. `open_seed_pack` - パック開封
-16. `plant_seed` - シード植付け
-17. `remove_seed` - シード除去
-18. `discard_seed` - シード廃棄
-19. `batch_discard_seeds` - バッチシード廃棄
+- **Switchboard VRF**: 設計完了、実装簡略化中 (`instructions/seeds.rs:4`)
+- **エントロピー**: ユーザー提供+VRF+タイムスタンプ組み合わせ
 
-## 🔒 セキュリティと検証
-
-### 🛡️ セキュリティ設計原則
-
-- **PDA ベースアクセス制御**: すべてのアカウントが PDA で管理
-- **署名者ベース所有権検証**: 署名による所有権確認
-- **数値オーバーフロー防止**: checked_add、checked_mul の使用
-- **包括的エラーハンドリング**: 100 以上の詳細エラー定義
-
-## 🧪 実装詳細
-
-### テストフレームワーク
-
-- **統合テスト**: 完全なユーザージャーニーテスト
-- **単体テスト**: 個別モジュール機能テスト
-- **セキュリティテスト**: セキュリティ境界テスト
-
-### 技術スタック
-
-- **Solana**: リアルタイムゲーミング用高性能ブロックチェーン
-- **Anchor フレームワーク**: 型安全な Rust 開発
-- **SPL Token 2022**: 組み込み手数料を持つ先進的トークン機能
-- **Switchboard VRF**: 検証可能なランダム関数
-- **SHA256**: プライバシー用暗号学的ハッシュ
-
-## 🎉 まとめ
-
-Solana Facility Game は、**即座のアップグレード**、**先進的ストレージシステム**、**ハッシュベース招待システム**、**SPL Token 2022 統合**をコアコンポーネントとする高度な農業シミュレーションゲームです。
-
-このゲームは、ユーザーに快適なゲーム体験を提供しながら、プロトコルの長期的な経済安定性とコミュニティ成長を確保する設計となっています。
+この設計により、Facility Game は持続可能で公正、かつエキサイティングなブロックチェーンゲーム体験を提供します。全ての機能は実際のコード実装に基づいており、確実に動作する機能のみを記載しています。

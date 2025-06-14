@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{TokenAccount, Mint};
 use anchor_spl::token_2022::Token2022;
 use crate::state::*;
 use crate::error::*;
@@ -138,12 +137,13 @@ pub struct ClaimRewardWithReferralRewards<'info> {
     )]
     pub global_stats: Account<'info, GlobalStats>,
     
+    /// CHECK: Token 2022 mint account with Transfer Fee extension
     #[account(
         mut,
         seeds = [b"reward_mint"],
         bump
     )]
-    pub reward_mint: Account<'info, Mint>,
+    pub reward_mint: UncheckedAccount<'info>,
     
     #[account(
         seeds = [b"mint_authority"],
@@ -152,12 +152,9 @@ pub struct ClaimRewardWithReferralRewards<'info> {
     /// CHECK: mint authority PDA
     pub mint_authority: UncheckedAccount<'info>,
     
-    #[account(
-        mut,
-        constraint = user_token_account.owner == user.key(),
-        constraint = user_token_account.mint == reward_mint.key()
-    )]
-    pub user_token_account: Account<'info, TokenAccount>,
+    /// CHECK: Token 2022 associated token account
+    #[account(mut)]
+    pub user_token_account: UncheckedAccount<'info>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -200,10 +197,19 @@ pub fn claim_reward_with_referral_rewards(
     )?;
     
     // Calculate distribution based on referral scenario
+    // Check if referrers are real (not placeholders) by comparing to user key
+    let has_real_level1 = ctx.accounts.level1_referrer.as_ref()
+        .map(|r| r.key() != ctx.accounts.user.key())
+        .unwrap_or(false) && ctx.accounts.user_state.referrer.is_some();
+        
+    let has_real_level2 = ctx.accounts.level2_referrer.as_ref()
+        .map(|r| r.key() != ctx.accounts.user.key())
+        .unwrap_or(false) && ctx.accounts.level2_referrer_state.is_some();
+        
     let (claimant_amount, _l1_amount, _l2_amount) = validate_referral_scenario(
         farming_reward,
-        ctx.accounts.user_state.referrer.is_some(),
-        ctx.accounts.level2_referrer_state.is_some(),
+        has_real_level1,
+        has_real_level2,
         ctx.accounts.level1_referrer.as_ref()
             .map(|r| r.key() == ctx.accounts.config.protocol_referral_address)
             .unwrap_or(false),
@@ -273,7 +279,9 @@ fn accumulate_referral_rewards_for_referrers(
         &mut ctx.accounts.level1_referrer_state,
         &ctx.accounts.level1_referrer,
     ) {
-        if l1_key.key() != ctx.accounts.config.protocol_referral_address {
+        // Skip if referrer is same as user (placeholder) or protocol address
+        if l1_key.key() != ctx.accounts.user.key() && 
+           l1_key.key() != ctx.accounts.config.protocol_referral_address {
             l1_state.pending_referral_rewards = l1_state.pending_referral_rewards
                 .checked_add(level1_reward)
                 .ok_or(GameError::CalculationOverflow)?;
@@ -287,7 +295,9 @@ fn accumulate_referral_rewards_for_referrers(
         &mut ctx.accounts.level2_referrer_state,
         &ctx.accounts.level2_referrer,
     ) {
-        if l2_key.key() != ctx.accounts.config.protocol_referral_address {
+        // Skip if referrer is same as user (placeholder) or protocol address
+        if l2_key.key() != ctx.accounts.user.key() && 
+           l2_key.key() != ctx.accounts.config.protocol_referral_address {
             l2_state.pending_referral_rewards = l2_state.pending_referral_rewards
                 .checked_add(level2_reward)
                 .ok_or(GameError::CalculationOverflow)?;

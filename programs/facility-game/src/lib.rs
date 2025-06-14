@@ -9,7 +9,7 @@ use anchor_lang::prelude::*;
 // このプログラムの一意のIDを宣言
 // Solana上でプログラムを識別するために使用される
 // anchor buildコマンドで自動生成され、target/deploy/に保存される
-declare_id!("FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B");
+declare_id!("GX2tJDB1bn73AUkC8brEru4qPN2JSTEd8A1cLAz81oZc");
 
 // 核心モジュールの宣言
 // Rustのモジュールシステムを使って、コードを論理的に分割
@@ -107,6 +107,27 @@ pub mod farm_game {
         new_max_invite_limit: Option<u8>,
     ) -> Result<()> {
         instructions::admin::update_config(ctx, new_operator, new_base_rate, new_halving_interval, new_treasury, new_max_invite_limit)
+    }
+    
+    /// Update seed pack cost (admin only)
+    /// Allows admin to dynamically adjust the WEED price for seed packs
+    /// 
+    /// # Parameters
+    /// * `new_seed_pack_cost` - New cost in WEED tokens (with 6 decimals)
+    /// 
+    /// # Example
+    /// - 300 WEED = 300_000_000 (with 6 decimals)
+    /// - 500 WEED = 500_000_000 (with 6 decimals)
+    /// 
+    /// # Security
+    /// - Admin signature required
+    /// - Prevents zero cost (must be > 0)
+    /// - Prevents excessively high costs (max 10,000 WEED)
+    pub fn update_seed_pack_cost(
+        ctx: Context<UpdateSeedPackCost>,
+        new_seed_pack_cost: u64,
+    ) -> Result<()> {
+        instructions::admin::update_seed_pack_cost(ctx, new_seed_pack_cost)
     }
     
     /// Initialize probability table with default Table 1 settings

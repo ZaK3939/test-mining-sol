@@ -1,71 +1,201 @@
-# Solana Facility Game - ドキュメント
+# Facility Game - ドキュメント
 
-このフォルダには、Solana Facility Gameの技術仕様、実装ガイド、および解説ドキュメントが含まれています。
+## 概要
 
-## 📚 ドキュメント一覧
+このディレクトリには、Facility Gameプロジェクトの包括的な技術ドキュメントが含まれています。各ドキュメントは現在の実装を正確に反映し、開発者、運営者、コントリビューターが必要な情報を効率的に見つけられるよう構成されています。
 
-### 🎯 メイン仕様書
-- **[overview.md](./overview.md)** - ゲーム全体の技術仕様とアーキテクチャ
-- **[mysteryseed.txt](./mysteryseed.txt)** - 確率テーブル設定（テーブル1とテーブル2）
+## ドキュメント構成
 
-### 🔧 運営者向けガイド
-- **[PROBABILITY_TABLE_MANAGEMENT.md](./PROBABILITY_TABLE_MANAGEMENT.md)** - 確率テーブル動的更新ガイド
-- **[METEORA_INTEGRATION_GUIDE.md](./METEORA_INTEGRATION_GUIDE.md)** - Meteora DEX統合ガイド
+### 📖 [システム概要 (overview.md)](./overview.md)
+- **対象者**: 全ステークホルダー
+- **内容**: 
+  - プロジェクトの核心コンセプト
+  - 技術アーキテクチャの概要
+  - ゲームフローとデータ構造
+  - 経済バランスと拡張可能性
 
-### 💻 開発者向けガイド
-- **[INVITE_SYSTEM_FRONTEND_GUIDE.md](./INVITE_SYSTEM_FRONTEND_GUIDE.md)** - 招待システムのフロントエンド実装ガイド
+Facility Gameの全体像を理解するための最初のドキュメントです。技術的詳細に入る前に、まずこちらをお読みください。
 
-### 🧪 テスト関連
-- **[TESTING_GUIDE.md](./TESTING_GUIDE.md)** - 包括的テストガイド（アーキテクチャ、カバレッジ、ベストプラクティス）
-- **[TEST_UPDATES_SUMMARY.md](./TEST_UPDATES_SUMMARY.md)** - テスト更新履歴とサマリー
-- **[test-kaisetsu.txt](./test-kaisetsu.txt)** - テスト解説
+### 🛠️ [命令セット詳細 (instructions.md)](./instructions.md)
+- **対象者**: バックエンド開発者、統合開発者
+- **内容**:
+  - 30以上の命令の詳細仕様
+  - パラメータとアカウント要件
+  - セキュリティ制約とエラーハンドリング
+  - 実装例とベストプラクティス
 
-## 📋 カテゴリ別ドキュメント
+プログラムとの統合やカスタム機能開発に必要な技術リファレンスです。
 
-### システム設計
-- [overview.md](./overview.md) - メインアーキテクチャ
-- [mysteryseed.txt](./mysteryseed.txt) - ゲームメカニクス
+### 🧪 [テスト戦略とテスト内容 (testing.md)](./testing.md)
+- **対象者**: QAエンジニア、開発者
+- **内容**:
+  - 単体・統合・E2Eテストの詳細
+  - パフォーマンステストとセキュリティテスト
+  - テストユーティリティとCI/CD統合
+  - 品質メトリクスと目標
 
-### 運営管理
-- [PROBABILITY_TABLE_MANAGEMENT.md](./PROBABILITY_TABLE_MANAGEMENT.md) - 確率調整
-- [METEORA_INTEGRATION_GUIDE.md](./METEORA_INTEGRATION_GUIDE.md) - DEX統合
+高品質なコード維持とリグレッション防止のためのテスト指針です。
 
-### フロントエンド開発
-- [INVITE_SYSTEM_FRONTEND_GUIDE.md](./INVITE_SYSTEM_FRONTEND_GUIDE.md) - UI実装
+### 🔧 [システム拡張ガイド (extensions.md)](./extensions.md)
+- **対象者**: アーキテクト、上級開発者
+- **内容**:
+  - 新シード・農場レベルの追加方法
+  - 新ゲームメカニクスの設計パターン
+  - マルチトークン統合とクロスチェーン対応
+  - ガバナンス機能とパフォーマンス最適化
+
+将来の機能拡張と技術進化に対応するための設計ガイダンスです。
+
+### 🎲 [確率テーブル管理 (probability-tables.md)](./probability-tables.md)
+- **対象者**: ゲームデザイナー、運営者
+- **内容**:
+  - 確率システムの詳細メカニズム
+  - 動的テーブル更新とバランス調整
+  - 経済分析ツールとA/Bテスト機能
+  - イベント用特別確率設定
+
+ゲームバランスの調整と経済の健全性維持のための運営ガイドです。
+
+### 👥 [招待システム実装方針 (invite-system.md)](./invite-system.md)
+- **対象者**: セキュリティエンジニア、運営者
+- **内容**:
+  - プライバシー保護アーキテクチャ
+  - 階層的紹介報酬メカニズム
+  - スパム防止とセキュリティ対策
+  - 分析ダッシュボードと運用管理
+
+安全で持続可能なユーザー成長エコシステムの構築と管理指針です。
+
+## 読み進め方
+
+### 🚀 初回セットアップ
+1. **[システム概要](./overview.md)** でプロジェクト全体を把握
+2. **[命令セット詳細](./instructions.md)** で技術仕様を理解
+3. 役割に応じて専門ドキュメントを参照
+
+### 👩‍💻 開発者向け
+```
+overview.md → instructions.md → testing.md → extensions.md
+```
+
+### 🎮 運営者向け
+```
+overview.md → probability-tables.md → invite-system.md
+```
+
+### 🔒 セキュリティ監査
+```
+instructions.md → testing.md → invite-system.md
+```
+
+## 実装状況
+
+### ✅ 完全実装済み
+- **コアゲームメカニクス**: 農場システム、シード管理、報酬分配
+- **経済システム**: 半減期メカニズム、供給量管理、手数料システム
+- **招待システム**: ハッシュベース招待、階層報酬、セキュリティ対策
+- **確率システム**: 動的テーブル、VRF統合、統計追跡
+
+### 🚧 部分実装・拡張準備済み
+- **農場レベル拡張**: 最大20レベルまで対応済み（現在5レベル）
+- **シード種類拡張**: 9種類まで対応済み（現在6種類）
+- **分析システム**: 基盤実装済み、ダッシュボード開発中
+- **ガバナンス機能**: 設計完了、実装待機中
+
+### 📋 今後の拡張計画
+- **NFT統合**: 特別シードのNFT化
+- **クロスチェーン**: Wormhole統合によるマルチチェーン対応
+- **DeFi統合**: 流動性プール、ステーキング機能
+- **モバイル対応**: React Native移植
+
+## 技術スタック
+
+### バックエンド
+- **Solana**: L1ブロックチェーン
+- **Anchor**: スマートコントラクトフレームワーク
+- **Rust**: プログラム言語
+- **Switchboard**: VRFプロバイダー
+
+### フロントエンド
+- **TypeScript**: 型安全な開発
+- **Vite**: 高速ビルドツール
+- **Solana Web3.js**: ブロックチェーン統合
+- **Vitest**: テストフレームワーク
+
+### インフラ
+- **GitHub Actions**: CI/CDパイプライン
+- **Vercel**: フロントエンドデプロイ
+- **Solana RPC**: ネットワーク接続
+
+## 開発環境セットアップ
+
+### 必要条件
+```bash
+# Solana CLI
+sh -c "$(curl -sSfL https://release.solana.com/v1.16.0/install)"
+
+# Anchor CLI
+npm install -g @coral-xyz/anchor-cli
+
+# Node.js & Yarn
+node --version  # >= 18.0.0
+yarn --version  # >= 1.22.0
+```
+
+### プロジェクトセットアップ
+```bash
+# プロジェクトクローン
+git clone <repository-url>
+cd facility-game
+
+# 依存関係インストール
+yarn install
+
+# ローカルバリデーター起動
+solana-test-validator
+
+# プログラムビルド・デプロイ
+anchor build
+anchor deploy
+
+# テスト実行
+anchor test
+```
+
+## コントリビューション
+
+### ドキュメント更新
+1. 実装変更に対応したドキュメント更新
+2. 新機能追加時のドキュメント作成
+3. ユーザビリティ改善の提案
 
 ### 品質保証
-- [TESTING_GUIDE.md](./TESTING_GUIDE.md) - 包括的テストガイド
-- [TEST_UPDATES_SUMMARY.md](./TEST_UPDATES_SUMMARY.md) - テスト戦略
-- [test-kaisetsu.txt](./test-kaisetsu.txt) - テスト詳細
+- プルリクエスト前の包括的テスト実行
+- セキュリティレビューの実施
+- パフォーマンス影響の評価
 
-## 🚀 クイックスタート
+### コミュニケーション
+- GitHub Issuesでの技術討議
+- Discord/Telegramでのコミュニティ交流
+- 定期的な開発進捗共有
 
-### 開発者
-1. [overview.md](./overview.md) でシステム全体を理解
-2. [INVITE_SYSTEM_FRONTEND_GUIDE.md](./INVITE_SYSTEM_FRONTEND_GUIDE.md) でフロントエンド実装を学習
+## サポートとコミュニティ
 
-### 運営者
-1. [PROBABILITY_TABLE_MANAGEMENT.md](./PROBABILITY_TABLE_MANAGEMENT.md) で確率調整方法を学習
-2. [mysteryseed.txt](./mysteryseed.txt) で確率テーブル設定を確認
+### 技術サポート
+- **GitHub Issues**: バグレポート、機能要望
+- **GitHub Discussions**: 技術討議、質問
+- **Developer Discord**: リアルタイム相談
 
-### QAエンジニア
-1. [TESTING_GUIDE.md](./TESTING_GUIDE.md) で包括的テスト戦略を確認
-2. [TEST_UPDATES_SUMMARY.md](./TEST_UPDATES_SUMMARY.md) でテスト更新履歴を確認
-3. [test-kaisetsu.txt](./test-kaisetsu.txt) でテスト詳細を理解
-
-## 📝 ドキュメント更新
-
-ドキュメントは以下の場合に更新されます：
-
-- 新機能の追加
-- 既存機能の変更
-- バグ修正による仕様変更
-- 運営要件の変更
-
-## 🤝 貢献
-
-ドキュメントの改善提案やバグ報告は、プロジェクトのメインリポジトリまでお願いします。
+### ドキュメントフィードバック
+このドキュメントの改善提案は以下の方法で受け付けています：
+1. GitHub Issuesでの具体的な改善提案
+2. プルリクエストでの直接修正
+3. Discord/Telegramでのフィードバック
 
 ---
 
-*最終更新: 2024年*
+**最終更新**: 2024年12月14日  
+**ドキュメントバージョン**: 1.0  
+**対応プログラムバージョン**: 1.0.0
+
+このドキュメントセットは、Facility Gameプロジェクトの継続的な成長と品質向上をサポートするため、定期的に更新・改善されます。

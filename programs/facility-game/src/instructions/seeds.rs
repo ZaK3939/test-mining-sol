@@ -5,6 +5,7 @@ use anchor_spl::token_2022::Token2022;
 use crate::state::*;
 use crate::error::*;
 use crate::utils::*;
+use crate::validation::common::validate_farm_space_capacity;
 
 /// Context for purchasing mystery seed pack with Switchboard VRF
 #[derive(Accounts)]

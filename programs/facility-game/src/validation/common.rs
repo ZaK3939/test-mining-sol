@@ -18,7 +18,7 @@ pub fn validate_ownership<T>(account: &T, expected_owner: Pubkey, error: GameErr
 where
     T: HasOwner,
 {
-    require!(account.get_owner() == expected_owner, error);
+    require!(account.get_owner() == expected_owner, GameError::InvalidOwnership);
     Ok(())
 }
 

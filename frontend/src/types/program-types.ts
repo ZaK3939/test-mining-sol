@@ -95,6 +95,15 @@ export interface SeedStorageAccount {
   reserve: number[];
 }
 
+export interface GlobalStatsAccount {
+  totalGrowPower: BN;
+  totalFarmSpaces: BN;
+  totalSupply: BN;
+  currentRewardsPerSecond: BN;
+  lastUpdateTime: BN;
+  reserve: number[];
+}
+
 // Transaction result types
 export type TransactionResult = string | 'already_initialized' | 'already_owned';
 

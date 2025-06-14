@@ -59,14 +59,6 @@ pub fn validate_seed_ownership(seed: &Seed, expected_owner: Pubkey) -> Result<()
     Ok(())
 }
 
-/// Validate farm space ownership (moved from common.rs)
-pub fn validate_farm_space_ownership(farm_space: &FarmSpace, expected_owner: Pubkey) -> Result<()> {
-    require!(
-        farm_space.owner == expected_owner,
-        GameError::Unauthorized
-    );
-    Ok(())
-}
 
 /// Validate seed is not already planted
 pub fn validate_seed_not_planted(seed: &Seed) -> Result<()> {
