@@ -130,6 +130,27 @@ pub mod farm_game {
         instructions::admin::update_seed_pack_cost(ctx, new_seed_pack_cost)
     }
     
+    /// Update farm space cost (admin only)
+    /// Allows admin to dynamically adjust the SOL price for farm space purchases
+    /// 
+    /// # Parameters
+    /// * `new_farm_space_cost_sol` - New cost in lamports (SOL)
+    /// 
+    /// # Example
+    /// - 0.5 SOL = 500_000_000 lamports
+    /// - 1.0 SOL = 1_000_000_000 lamports
+    /// 
+    /// # Security
+    /// - Admin signature required
+    /// - Prevents zero cost (must be > 0)
+    /// - Prevents excessively high costs (max 10 SOL)
+    pub fn update_farm_space_cost(
+        ctx: Context<UpdateFarmSpaceCost>,
+        new_farm_space_cost_sol: u64,
+    ) -> Result<()> {
+        instructions::admin::update_farm_space_cost(ctx, new_farm_space_cost_sol)
+    }
+    
     /// Reveal a new seed type (admin only)
     /// Makes a previously hidden seed type visible to users with its values
     /// 
@@ -353,7 +374,7 @@ pub mod farm_game {
     /// # セキュリティ
     /// - ハッシュベースでプライバシー確保
     /// - 英数字のみ使用可能
-    pub fn create_invite_code(ctx: Context<CreateInviteCode>, invite_code: [u8; 8]) -> Result<()> {
+    pub fn create_invite_code(ctx: Context<CreateInviteCode>, invite_code: [u8; 12]) -> Result<()> {
         instructions::invite::create_invite_code(ctx, invite_code)
     }
 
@@ -361,10 +382,9 @@ pub mod farm_game {
     /// 招待コードでユーザー初期化と紹介関係確立
     pub fn use_invite_code(
         ctx: Context<UseInviteCode>, 
-        invite_code: [u8; 8],
-        inviter_pubkey: Pubkey
+        invite_code: [u8; 12]
     ) -> Result<()> {
-        instructions::invite::use_invite_code(ctx, invite_code, inviter_pubkey)
+        instructions::invite::use_invite_code(ctx, invite_code)
     }
 
     // ===== SEED SYSTEM INSTRUCTIONS =====
@@ -452,6 +472,20 @@ pub mod farm_game {
     /// and reclaim all rent from the seed accounts
     pub fn batch_discard_seeds(ctx: Context<BatchDiscardSeeds>, seed_ids: Vec<u64>) -> Result<()> {
         instructions::seeds::batch_discard_seeds(ctx, seed_ids)
+    }
+
+    /// Batch plant multiple seeds in farm space
+    /// Efficiently plant up to 25 seeds in a single transaction
+    /// Validates farm capacity and updates all statistics
+    pub fn batch_plant_seeds(ctx: Context<BatchPlantSeeds>, seed_ids: Vec<u64>) -> Result<()> {
+        instructions::seeds::batch_plant_seeds(ctx, seed_ids)
+    }
+
+    /// Batch remove multiple seeds from farm space
+    /// Efficiently remove up to 25 seeds in a single transaction
+    /// Updates all statistics and makes seeds available for replanting
+    pub fn batch_remove_seeds(ctx: Context<BatchRemoveSeeds>, seed_ids: Vec<u64>) -> Result<()> {
+        instructions::seeds::batch_remove_seeds(ctx, seed_ids)
     }
 
     // ===== FARM LEVEL MANAGEMENT =====

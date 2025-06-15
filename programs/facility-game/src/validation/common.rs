@@ -87,7 +87,7 @@ pub fn validate_seed_pack_quantity(quantity: u8) -> Result<()> {
     validate_quantity_range(quantity, MIN_QUANTITY, MAX_SEED_PACK_QUANTITY)
 }
 
-/// Validate farm level
+/// Validate farm level (currently level 5, future expansion to 10)
 pub fn validate_farm_level(level: u8) -> Result<()> {
     require!(level >= 1 && level <= 5, GameError::InvalidConfig);
     Ok(())
@@ -105,7 +105,7 @@ pub fn validate_referral_level(level: u8) -> Result<()> {
 // ===== INVITE CODE VALIDATIONS =====
 
 /// Validate invite code format
-pub fn validate_invite_code_format(code: &[u8; 8]) -> Result<()> {
+pub fn validate_invite_code_format(code: &[u8; 12]) -> Result<()> {
     require!(
         crate::constants::validate_invite_code(code),
         GameError::InvalidInviteCode
@@ -145,6 +145,48 @@ pub fn validate_time_not_future(time: i64, current_time: i64, tolerance: i64) ->
         time <= current_time + tolerance,
         GameError::InvalidConfig
     );
+    Ok(())
+}
+
+// ===== BATCH OPERATION VALIDATIONS =====
+
+/// Validate batch plant operation size
+pub fn validate_batch_plant_size(seed_ids: &[u64]) -> Result<()> {
+    require!(!seed_ids.is_empty(), GameError::InvalidQuantity);
+    require!(
+        seed_ids.len() <= MAX_BATCH_PLANT_SIZE,
+        GameError::TooManyTransfers
+    );
+    Ok(())
+}
+
+/// Validate batch remove operation size
+pub fn validate_batch_remove_size(seed_ids: &[u64]) -> Result<()> {
+    require!(!seed_ids.is_empty(), GameError::InvalidQuantity);
+    require!(
+        seed_ids.len() <= MAX_BATCH_REMOVE_SIZE,
+        GameError::TooManyTransfers
+    );
+    Ok(())
+}
+
+/// Validate farm capacity can accommodate batch planting
+pub fn validate_batch_plant_capacity(farm_space: &FarmSpace, seeds_to_plant: usize) -> Result<()> {
+    let available_capacity = farm_space.capacity as usize - farm_space.seed_count as usize;
+    require!(
+        seeds_to_plant <= available_capacity,
+        GameError::FarmSpaceCapacityExceeded
+    );
+    Ok(())
+}
+
+/// Validate no duplicate seed IDs in batch operation
+pub fn validate_no_duplicate_seed_ids(seed_ids: &[u64]) -> Result<()> {
+    for i in 0..seed_ids.len() {
+        for j in (i + 1)..seed_ids.len() {
+            require!(seed_ids[i] != seed_ids[j], GameError::DuplicateSeedId);
+        }
+    }
     Ok(())
 }
 

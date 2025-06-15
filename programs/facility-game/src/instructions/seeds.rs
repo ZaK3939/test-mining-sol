@@ -28,7 +28,7 @@ use crate::validation::common::validate_farm_space_capacity;
 //
 // VRF ACCOUNT STRUCTURES:
 // These match the Switchboard account layouts for direct interaction
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
 pub struct VrfStatus {
     pub requesting: bool,
     pub ready: bool,
@@ -319,6 +319,68 @@ pub struct BatchDiscardSeeds<'info> {
         constraint = seed_storage.owner == user.key()
     )]
     pub seed_storage: Account<'info, SeedStorage>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for batch planting seeds
+#[derive(Accounts)]
+pub struct BatchPlantSeeds<'info> {
+    #[account(
+        mut,
+        seeds = [b"user", user.key().as_ref()],
+        bump
+    )]
+    pub user_state: Account<'info, UserState>,
+    
+    #[account(
+        mut,
+        seeds = [b"farm_space", user.key().as_ref()],
+        bump,
+        constraint = farm_space.owner == user.key()
+    )]
+    pub farm_space: Account<'info, FarmSpace>,
+    
+    #[account(
+        mut,
+        seeds = [b"global_stats"],
+        bump
+    )]
+    pub global_stats: Account<'info, GlobalStats>,
+    
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for batch removing seeds
+#[derive(Accounts)]
+pub struct BatchRemoveSeeds<'info> {
+    #[account(
+        mut,
+        seeds = [b"user", user.key().as_ref()],
+        bump
+    )]
+    pub user_state: Account<'info, UserState>,
+    
+    #[account(
+        mut,
+        seeds = [b"farm_space", user.key().as_ref()],
+        bump,
+        constraint = farm_space.owner == user.key()
+    )]
+    pub farm_space: Account<'info, FarmSpace>,
+    
+    #[account(
+        mut,
+        seeds = [b"global_stats"],
+        bump
+    )]
+    pub global_stats: Account<'info, GlobalStats>,
     
     #[account(mut)]
     pub user: Signer<'info>,
@@ -880,7 +942,7 @@ fn calculate_vrf_entropy_score(vrf_result: &[u8; 32]) -> u8 {
         score += 25; // Bonus for high-quality randomness
     }
     
-    (score.min(100) as u8)
+    score.min(100) as u8
 }
 
 /// Calculate realistic VRF fee based on current network conditions
@@ -1332,6 +1394,237 @@ fn update_stats_on_removal(
     
     // Update global stats
     update_global_grow_power(global_stats, -(grow_power as i64), current_time)?;
+    
+    Ok(())
+}
+
+/// Batch plant multiple seeds in farm space
+pub fn batch_plant_seeds(ctx: Context<BatchPlantSeeds>, seed_ids: Vec<u64>) -> Result<()> {
+    // Validate batch size
+    require!(seed_ids.len() <= crate::constants::MAX_BATCH_PLANT_SIZE, GameError::TooManyTransfers);
+    require!(!seed_ids.is_empty(), GameError::InvalidQuantity);
+    
+    let current_time = Clock::get()?.unix_timestamp;
+    let farm_space_key = ctx.accounts.farm_space.key();
+    let user_key = ctx.accounts.user.key();
+    
+    let mut successful_plants = 0u32;
+    let mut total_grow_power_added = 0u64;
+    
+    // Process each seed ID
+    for &seed_id in &seed_ids {
+        // Derive the seed account PDA
+        let (seed_pda, _) = Pubkey::find_program_address(
+            &[
+                b"seed",
+                user_key.as_ref(),
+                &seed_id.to_le_bytes(),
+            ],
+            ctx.program_id,
+        );
+        
+        // Find the seed account in remaining accounts
+        let seed_account_info = match ctx.remaining_accounts.iter().find(|acc| acc.key() == seed_pda) {
+            Some(acc) => acc,
+            None => {
+                msg!("Seed {} not found in remaining accounts, skipping", seed_id);
+                continue;
+            }
+        };
+        
+        // Verify the account is owned by this program
+        if seed_account_info.owner != ctx.program_id {
+            msg!("Seed {} not owned by program, skipping", seed_id);
+            continue;
+        }
+        
+        // Try to deserialize the seed
+        let mut seed_data = seed_account_info.try_borrow_mut_data()?;
+        
+        // Check basic data length
+        if seed_data.len() < 58 {
+            msg!("Seed {} has invalid data length, skipping", seed_id);
+            continue;
+        }
+        
+        // Parse seed data to validate planting prerequisites
+        // Layout: discriminator(8) + owner(32) + seed_type(1) + grow_power(8) + is_planted(1) + planted_farm_space(33)
+        
+        // Check owner (bytes 8-40)
+        let owner_bytes = &seed_data[8..40];
+        let seed_owner = Pubkey::try_from(owner_bytes).unwrap_or_default();
+        if seed_owner != user_key {
+            msg!("Seed {} not owned by user, skipping", seed_id);
+            continue;
+        }
+        
+        // Check if already planted (byte 49)
+        let is_planted = seed_data[49] != 0;
+        if is_planted {
+            msg!("Seed {} already planted, skipping", seed_id);
+            continue;
+        }
+        
+        // Check farm capacity before planting
+        if ctx.accounts.farm_space.seed_count >= ctx.accounts.farm_space.capacity {
+            msg!("Farm space at capacity, cannot plant more seeds");
+            break;
+        }
+        
+        // Extract grow power (bytes 41-49)
+        let grow_power_bytes = &seed_data[41..49];
+        let grow_power = u64::from_le_bytes(grow_power_bytes.try_into().unwrap_or([0; 8]));
+        
+        // Plant the seed by updating the account data
+        seed_data[49] = 1; // Set is_planted to true
+        
+        // Set planted_farm_space (bytes 50-82)
+        let farm_space_bytes = farm_space_key.to_bytes();
+        seed_data[50] = 1; // Set Some variant
+        seed_data[51..83].copy_from_slice(&farm_space_bytes);
+        
+        drop(seed_data); // Release borrow
+        
+        // Update farm space statistics
+        ctx.accounts.farm_space.seed_count += 1;
+        ctx.accounts.farm_space.total_grow_power += grow_power;
+        
+        total_grow_power_added += grow_power;
+        successful_plants += 1;
+        
+        msg!("Seed {} planted successfully, grow power: {}", seed_id, grow_power);
+    }
+    
+    // Update user and global statistics if any seeds were planted
+    if successful_plants > 0 {
+        ctx.accounts.user_state.total_grow_power += total_grow_power_added;
+        update_global_grow_power(&mut ctx.accounts.global_stats, total_grow_power_added as i64, current_time)?;
+    }
+    
+    msg!(
+        "Batch plant completed: {} seeds planted, total grow power added: {}, farm total: {}",
+        successful_plants,
+        total_grow_power_added,
+        ctx.accounts.farm_space.total_grow_power
+    );
+    
+    Ok(())
+}
+
+/// Batch remove multiple seeds from farm space
+pub fn batch_remove_seeds(ctx: Context<BatchRemoveSeeds>, seed_ids: Vec<u64>) -> Result<()> {
+    // Validate batch size
+    require!(seed_ids.len() <= crate::constants::MAX_BATCH_REMOVE_SIZE, GameError::TooManyTransfers);
+    require!(!seed_ids.is_empty(), GameError::InvalidQuantity);
+    
+    let current_time = Clock::get()?.unix_timestamp;
+    let farm_space_key = ctx.accounts.farm_space.key();
+    let user_key = ctx.accounts.user.key();
+    
+    let mut successful_removals = 0u32;
+    let mut total_grow_power_removed = 0u64;
+    
+    // Process each seed ID
+    for &seed_id in &seed_ids {
+        // Derive the seed account PDA
+        let (seed_pda, _) = Pubkey::find_program_address(
+            &[
+                b"seed",
+                user_key.as_ref(),
+                &seed_id.to_le_bytes(),
+            ],
+            ctx.program_id,
+        );
+        
+        // Find the seed account in remaining accounts
+        let seed_account_info = match ctx.remaining_accounts.iter().find(|acc| acc.key() == seed_pda) {
+            Some(acc) => acc,
+            None => {
+                msg!("Seed {} not found in remaining accounts, skipping", seed_id);
+                continue;
+            }
+        };
+        
+        // Verify the account is owned by this program
+        if seed_account_info.owner != ctx.program_id {
+            msg!("Seed {} not owned by program, skipping", seed_id);
+            continue;
+        }
+        
+        // Try to deserialize the seed
+        let mut seed_data = seed_account_info.try_borrow_mut_data()?;
+        
+        // Check basic data length
+        if seed_data.len() < 83 {
+            msg!("Seed {} has invalid data length, skipping", seed_id);
+            continue;
+        }
+        
+        // Parse seed data to validate removal prerequisites
+        // Layout: discriminator(8) + owner(32) + seed_type(1) + grow_power(8) + is_planted(1) + planted_farm_space(33)
+        
+        // Check owner (bytes 8-40)
+        let owner_bytes = &seed_data[8..40];
+        let seed_owner = Pubkey::try_from(owner_bytes).unwrap_or_default();
+        if seed_owner != user_key {
+            msg!("Seed {} not owned by user, skipping", seed_id);
+            continue;
+        }
+        
+        // Check if planted (byte 49)
+        let is_planted = seed_data[49] != 0;
+        if !is_planted {
+            msg!("Seed {} not planted, skipping", seed_id);
+            continue;
+        }
+        
+        // Check if planted in this farm space
+        let planted_farm_space_option = seed_data[50] != 0;
+        if planted_farm_space_option {
+            let planted_farm_space_bytes = &seed_data[51..83];
+            let planted_farm_space = Pubkey::try_from(planted_farm_space_bytes).unwrap_or_default();
+            if planted_farm_space != farm_space_key {
+                msg!("Seed {} not planted in this farm space, skipping", seed_id);
+                continue;
+            }
+        } else {
+            msg!("Seed {} has no planted farm space, skipping", seed_id);
+            continue;
+        }
+        
+        // Extract grow power (bytes 41-49)
+        let grow_power_bytes = &seed_data[41..49];
+        let grow_power = u64::from_le_bytes(grow_power_bytes.try_into().unwrap_or([0; 8]));
+        
+        // Remove the seed by updating the account data
+        seed_data[49] = 0; // Set is_planted to false
+        seed_data[50] = 0; // Set planted_farm_space to None
+        seed_data[51..83].fill(0); // Clear the farm space pubkey
+        
+        drop(seed_data); // Release borrow
+        
+        // Update farm space statistics
+        ctx.accounts.farm_space.seed_count -= 1;
+        ctx.accounts.farm_space.total_grow_power -= grow_power;
+        
+        total_grow_power_removed += grow_power;
+        successful_removals += 1;
+        
+        msg!("Seed {} removed successfully, grow power: {}", seed_id, grow_power);
+    }
+    
+    // Update user and global statistics if any seeds were removed
+    if successful_removals > 0 {
+        ctx.accounts.user_state.total_grow_power -= total_grow_power_removed;
+        update_global_grow_power(&mut ctx.accounts.global_stats, -(total_grow_power_removed as i64), current_time)?;
+    }
+    
+    msg!(
+        "Batch remove completed: {} seeds removed, total grow power removed: {}, farm total: {}",
+        successful_removals,
+        total_grow_power_removed,
+        ctx.accounts.farm_space.total_grow_power
+    );
     
     Ok(())
 }

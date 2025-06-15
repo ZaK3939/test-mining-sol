@@ -194,4 +194,7 @@ pub enum GameError {
     
     #[msg("Invalid ownership - account does not belong to user")]
     InvalidOwnership,
+    
+    #[msg("Duplicate seed ID found in batch operation")]
+    DuplicateSeedId,
 }

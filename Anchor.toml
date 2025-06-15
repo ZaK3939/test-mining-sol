@@ -27,11 +27,11 @@ skip-lint = false
 
 # ローカルネット用（開発環境）
 [programs.localnet]
-farm_game = "FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B"
+farm_game = "GX2tJDB1bn73AUkC8brEru4qPN2JSTEd8A1cLAz81oZc"
 
 # Devnet用（テストネット）
 [programs.devnet]
-farm_game = "7r3R1S43BS9fQbh1eBhM63u8XZJd7bYRtgMrAQRNrfcB"
+farm_game = "GX2tJDB1bn73AUkC8brEru4qPN2JSTEd8A1cLAz81oZc"
 
 # Mainnet用（本番環境）
 [programs.mainnet]

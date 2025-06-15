@@ -52,17 +52,20 @@ pub const TOTAL_WEED_SUPPLY: u64 = 240_000_000 * 1_000_000;
 // 農場システムの成長とアップグレード経済設計
 
 
-/// 農場レベル別容量（種植え可能数）
-/// レベル1:4, レベル2:6, レベル3:10, レベル4:16, レベル5:25
-/// 設計思想：段階的成長でバランスの取れた進行を確保
+/// 農場レベル別容量（種植え可能数）最大レベル10まで拡張可能、最大100以下
+/// 現在解放：レベル1-5（レベル6-10は将来実装予定）
+/// レベル1:4, レベル2:6, レベル3:10, レベル4:16, レベル5:25, レベル6:35, レベル7:50, レベル8:65, レベル9:80, レベル10:100
+/// 設計思想：段階的成長でバランスの取れた進行を確保、最大100以下に制限
 /// 戦略的要素：高レベル種の効率的配置が重要になる
-pub const FARM_CAPACITIES: [u8; 5] = [4, 6, 10, 16, 25];
+pub const FARM_CAPACITIES: [u8; 10] = [4, 6, 10, 16, 25, 35, 50, 65, 80, 100];
 
 /// 農場自動アップグレード条件（累積シードパック購入数）
+/// 現在解放：レベル1-5（レベル6-10は将来実装予定）
 /// 設計思想：パック購入数に応じた自動アップグレードシステム
 /// ゲーム進行：より多くのパックを購入することで自動的に農場が拡張される
-/// レベル1: 0パック, レベル2: 30パック, レベル3: 100パック, レベル4: 300パック, レベル5: 500パック
-pub const FARM_UPGRADE_THRESHOLDS: [u32; 5] = [0, 30, 100, 300, 500];
+/// レベル1: 0, レベル2: 30, レベル3: 100, レベル4: 300, レベル5: 500, 
+/// レベル6: 800, レベル7: 1200, レベル8: 1800, レベル9: 2500, レベル10: 3500
+pub const FARM_UPGRADE_THRESHOLDS: [u32; 10] = [0, 30, 100, 300, 500, 800, 1200, 1800, 2500, 3500];
 
 /// 従来のアップグレードコスト（後方互換性のため保持、現在は未使用）
 /// 注意：新システムでは累積パック購入数による自動アップグレードを使用
@@ -165,8 +168,8 @@ pub const MAX_REFERRAL_DEPTH: u8 = 2;
 /// Minimum quantity for operations
 pub const MIN_QUANTITY: u8 = 1;
 
-/// Maximum invite code length
-pub const INVITE_CODE_LENGTH: usize = 8;
+/// Maximum invite code length (increased to 12 to reduce collision probability)
+pub const INVITE_CODE_LENGTH: usize = 12;
 
 /// Minimum time interval for reward claims (prevent spam)
 pub const MIN_CLAIM_INTERVAL: i64 = 1; // 1 second
@@ -176,6 +179,12 @@ pub const MAX_BATCH_TRANSFER_SIZE: usize = 100;
 
 /// Maximum batch discard size
 pub const MAX_BATCH_DISCARD_SIZE: usize = 100;
+
+/// Maximum batch plant size
+pub const MAX_BATCH_PLANT_SIZE: usize = 25;
+
+/// Maximum batch remove size
+pub const MAX_BATCH_REMOVE_SIZE: usize = 25;
 
 /// Time tolerance for future time validation (seconds)
 pub const TIME_TOLERANCE: i64 = 30;
@@ -339,13 +348,13 @@ pub fn validate_quantity(quantity: u8) -> bool {
     quantity >= MIN_QUANTITY && quantity <= MAX_SEED_PACK_QUANTITY
 }
 
-/// Validate farm level
+/// Validate farm level (currently level 5, future expansion to 10)
 pub fn validate_farm_level(level: u8) -> bool {
     level >= 1 && level <= 5
 }
 
 /// Validate invite code format
-pub fn validate_invite_code(code: &[u8; 8]) -> bool {
+pub fn validate_invite_code(code: &[u8; 12]) -> bool {
     code.iter().all(|&b| {
         (b >= b'A' && b <= b'Z') || 
         (b >= b'a' && b <= b'z') || 
@@ -380,7 +389,8 @@ mod tests {
         assert_eq!(SEED_GROW_POWERS.len(), 6);
         assert_eq!(SEED_PROBABILITY_THRESHOLDS.len(), 6);
         assert_eq!(SEED_PROBABILITIES.len(), 6);
-        assert_eq!(FARM_CAPACITIES.len(), 5);
+        assert_eq!(FARM_CAPACITIES.len(), 10);
+        assert_eq!(FARM_UPGRADE_THRESHOLDS.len(), 10);
         assert_eq!(LEGACY_UPGRADE_COSTS.len(), 4);
         
         // Verify probability thresholds are in ascending order
@@ -406,18 +416,18 @@ mod tests {
         assert!(validate_quantity(100));
         assert!(!validate_quantity(101));
         
-        // Test farm level validation
+        // Test farm level validation (currently level 5)
         assert!(!validate_farm_level(0));
         assert!(validate_farm_level(1));
         assert!(validate_farm_level(5));
         assert!(!validate_farm_level(6));
         
-        // Test invite code validation
-        assert!(validate_invite_code(b"ABCD1234"));
-        assert!(validate_invite_code(b"abcd1234"));
-        assert!(validate_invite_code(b"AbCd1234"));
-        assert!(!validate_invite_code(b"ABC@1234")); // Contains invalid character
-        assert!(!validate_invite_code(b"ABC 1234")); // Contains space
+        // Test invite code validation (12 characters)
+        assert!(validate_invite_code(b"ABCD12345678"));
+        assert!(validate_invite_code(b"abcd12345678"));
+        assert!(validate_invite_code(b"AbCd12345678"));
+        assert!(!validate_invite_code(b"ABC@12345678")); // Contains invalid character
+        assert!(!validate_invite_code(b"ABC 12345678")); // Contains space
     }
     
     #[test]

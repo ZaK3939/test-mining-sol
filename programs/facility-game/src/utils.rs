@@ -335,16 +335,14 @@ pub fn remove_seed_from_storage_legacy(
 // ===== HASH-BASED INVITE CODE UTILITIES =====
 
 /// Generate a secure hash for invite codes
-/// Formula: SHA256(plaintext_code + salt + inviter_pubkey)
+/// Formula: SHA256(plaintext_code + salt)
 pub fn generate_invite_code_hash(
-    plaintext_code: &[u8; 8],
-    salt: &[u8; 16],
-    inviter: &Pubkey
+    plaintext_code: &[u8; 12],
+    salt: &[u8; 16]
 ) -> [u8; 32] {
     let mut data = Vec::new();
     data.extend_from_slice(plaintext_code);
     data.extend_from_slice(salt);
-    data.extend_from_slice(inviter.as_ref());
     
     hash(&data).to_bytes()
 }
@@ -362,8 +360,8 @@ pub fn get_fixed_salt() -> [u8; 16] {
     ]
 }
 
-/// Validate invite code format (8 alphanumeric characters)
-pub fn validate_invite_code_format(invite_code: &[u8; 8]) -> Result<()> {
+/// Validate invite code format (12 alphanumeric characters)
+pub fn validate_invite_code_format(invite_code: &[u8; 12]) -> Result<()> {
     for &byte in invite_code.iter() {
         require!(
             (byte >= b'0' && byte <= b'9') || 
@@ -377,11 +375,10 @@ pub fn validate_invite_code_format(invite_code: &[u8; 8]) -> Result<()> {
 
 /// Verify that a plaintext code matches the stored hash
 pub fn verify_invite_code_hash(
-    plaintext_code: &[u8; 8],
+    plaintext_code: &[u8; 12],
     salt: &[u8; 16],
-    inviter: &Pubkey,
     stored_hash: &[u8; 32]
 ) -> bool {
-    let computed_hash = generate_invite_code_hash(plaintext_code, salt, inviter);
+    let computed_hash = generate_invite_code_hash(plaintext_code, salt);
     computed_hash == *stored_hash
 }

@@ -637,3 +637,62 @@ pub fn update_seed_values(
     
     Ok(())
 }
+
+// ===== FARM SPACE COST MANAGEMENT =====
+
+/// Context for updating farm space cost
+#[derive(Accounts)]
+pub struct UpdateFarmSpaceCost<'info> {
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ crate::error::GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+    
+    #[account(mut)]
+    pub admin: Signer<'info>,
+}
+
+/// Update farm space cost (admin only)
+/// Allows admin to dynamically adjust the SOL price for farm space purchases
+/// 
+/// # Parameters
+/// * `new_farm_space_cost_sol` - New cost in lamports (SOL)
+/// 
+/// # Example
+/// - 0.5 SOL = 500_000_000 lamports
+/// - 1.0 SOL = 1_000_000_000 lamports
+/// 
+/// # Security
+/// - Admin signature required
+/// - Prevents zero cost (must be > 0)
+/// - Prevents excessively high costs (max 10 SOL)
+pub fn update_farm_space_cost(
+    ctx: Context<UpdateFarmSpaceCost>,
+    new_farm_space_cost_sol: u64,
+) -> Result<()> {
+    let config = &mut ctx.accounts.config;
+    
+    // Validation: cost must be positive
+    require!(new_farm_space_cost_sol > 0, crate::error::GameError::InvalidAmount);
+    
+    // Validation: cost must be reasonable (max 10 SOL = 10,000,000,000 lamports)
+    require!(
+        new_farm_space_cost_sol <= 10_000_000_000,
+        crate::error::GameError::InvalidAmount
+    );
+    
+    // Store old value for logging
+    let old_cost = config.farm_space_cost_sol;
+    
+    // Update the farm space cost
+    config.farm_space_cost_sol = new_farm_space_cost_sol;
+    
+    msg!("Farm space cost updated:");
+    msg!("  Old cost: {} lamports ({} SOL)", old_cost, old_cost as f64 / 1_000_000_000.0);
+    msg!("  New cost: {} lamports ({} SOL)", new_farm_space_cost_sol, new_farm_space_cost_sol as f64 / 1_000_000_000.0);
+    
+    Ok(())
+}

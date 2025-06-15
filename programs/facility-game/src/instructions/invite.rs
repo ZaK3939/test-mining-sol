@@ -13,19 +13,18 @@ use crate::utils::{
 // 招待される人のアドレスは不要 - オープンな招待方式
 
 /// ハッシュベース招待コード作成のコンテキスト
-/// 8バイト招待コードをSHA256ハッシュ化してプライバシー確保
+/// 12バイト招待コードをSHA256ハッシュ化してプライバシー確保
 /// 衝突攻撃防止のため、ハッシュ値をPDAシードに使用
 #[derive(Accounts)]
-#[instruction(invite_code: [u8; 8])]
+#[instruction(invite_code: [u8; 12])]
 pub struct CreateInviteCode<'info> {
     #[account(
         init,
         payer = inviter,
         space = InviteCode::LEN,
         seeds = [
-            b"invite_hash", 
-            inviter.key().as_ref(),
-            &generate_invite_code_hash(&invite_code, &get_fixed_salt(), &inviter.key())
+            b"invite_code", 
+            &generate_invite_code_hash(&invite_code, &get_fixed_salt())
         ],
         bump
     )]
@@ -44,17 +43,16 @@ pub struct CreateInviteCode<'info> {
 }
 
 /// ハッシュベース招待コード使用のコンテキスト
-/// 平文コード + 招待者アドレスでハッシュ検証後にユーザー初期化
+/// 平文コードでハッシュ検証後にユーザー初期化
 /// ハッシュ値を使用してPDAを特定し、衝突攻撃を防止
 #[derive(Accounts)]
-#[instruction(invite_code: [u8; 8], inviter_pubkey: Pubkey)]
+#[instruction(invite_code: [u8; 12])]
 pub struct UseInviteCode<'info> {
     #[account(
         mut,
         seeds = [
-            b"invite_hash", 
-            inviter_pubkey.as_ref(), 
-            &generate_invite_code_hash(&invite_code, &get_fixed_salt(), &inviter_pubkey)
+            b"invite_code", 
+            &generate_invite_code_hash(&invite_code, &get_fixed_salt())
         ],
         bump,
         constraint = invite_account.is_active @ GameError::InviteCodeInactive,
@@ -90,7 +88,7 @@ pub struct UseInviteCode<'info> {
 /// オペレーターは無制限、一般ユーザーは設定された上限まで招待可能
 pub fn create_invite_code(
     ctx: Context<CreateInviteCode>,
-    invite_code: [u8; 8]
+    invite_code: [u8; 12]
 ) -> Result<()> {
     // Validate invite code format
     validate_invite_code_format(&invite_code)?;
@@ -121,8 +119,7 @@ pub fn create_invite_code(
     let salt = get_fixed_salt();
     let code_hash = generate_invite_code_hash(
         &invite_code,
-        &salt,
-        &ctx.accounts.inviter.key()
+        &salt
     );
     
     // Set secret invite account data
@@ -147,12 +144,11 @@ pub fn create_invite_code(
 }
 
 /// ハッシュベース招待コードを使用してユーザー初期化
-/// 平文コード + 招待者アドレスでハッシュ検証を行い、紹介関係を確立
+/// 平文コードでハッシュ検証を行い、紹介関係を確立
 /// 招待される人のアドレスは事前に不要（オープン招待）
 pub fn use_invite_code(
     ctx: Context<UseInviteCode>,
-    invite_code: [u8; 8],
-    inviter_pubkey: Pubkey
+    invite_code: [u8; 12]
 ) -> Result<()> {
     let invite = &mut ctx.accounts.invite_account;
     
@@ -161,17 +157,13 @@ pub fn use_invite_code(
         verify_invite_code_hash(
             &invite_code,
             &invite.salt,
-            &inviter_pubkey,
             &invite.code_hash
         ),
         GameError::InvalidInviteCode
     );
     
-    // Verify inviter matches
-    require!(
-        invite.inviter == inviter_pubkey,
-        GameError::InvalidInviter
-    );
+    // Get inviter from invite account
+    let inviter_pubkey = invite.inviter;
     
     // Initialize user state with referrer
     let user_state = &mut ctx.accounts.user_state;

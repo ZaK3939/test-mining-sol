@@ -1,12 +1,12 @@
 // Script to manually initialize the config account
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { AnchorProvider, Wallet, Program } from '@coral-xyz/anchor';
-import idl from '../src/idl/farm_game.json';
+import idl from '../src/idl/facility_game.json';
 import fs from 'fs';
 import path from 'path';
 
-const PROGRAM_ID = 'FA1xdxZNykyJaMsuSekWJrUzwY8PVh1Usn7mR8eWmw5B';
-const RPC_URL = 'https://api.devnet.solana.com';
+const PROGRAM_ID = 'GX2tJDB1bn73AUkC8brEru4qPN2JSTEd8A1cLAz81oZc';
+const RPC_URL = 'http://localhost:8899';
 
 async function initializeConfig() {
   console.log('🚀 Starting config initialization...');

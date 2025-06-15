@@ -39,6 +39,35 @@ pub struct Config {
     pub reserve: [u8; 2],
 }
 
+impl Config {
+    /// Account data size calculation
+    pub const LEN: usize = 8 + // discriminator
+        8 + // base_rate
+        8 + // halving_interval
+        8 + // next_halving_time
+        32 + // admin
+        32 + // treasury
+        8 + // seed_pack_cost
+        8 + // seed_counter
+        8 + // seed_pack_counter
+        8 + // farm_space_cost_sol
+        1 + // max_invite_limit
+        1 + // trading_fee_percentage
+        32 + // protocol_referral_address
+        8 + // total_supply_minted
+        32 + // operator
+        2; // reserve
+
+    /// Default base rate for reward calculations
+    pub const DEFAULT_BASE_RATE: u64 = crate::constants::DEFAULT_BASE_RATE;
+    
+    /// Default halving interval
+    pub const DEFAULT_HALVING_INTERVAL: i64 = crate::constants::DEFAULT_HALVING_INTERVAL;
+    
+    /// Default farm space cost in lamports (0.5 SOL)
+    pub const DEFAULT_FARM_SPACE_COST: u64 = crate::constants::FARM_SPACE_COST_SOL;
+}
+
 /// Individual user account state
 /// Tracks user progress and referral relationships
 #[account]
@@ -67,7 +96,7 @@ pub struct UserState {
 pub struct FarmSpace {
     /// Farm space owner's public key
     pub owner: Pubkey,
-    /// Current level (1-5, affects capacity)
+    /// Current level (1-5 currently, up to 10 in future, affects capacity)
     pub level: u8,
     /// Maximum seeds that can be planted at current level
     pub capacity: u8,
@@ -625,7 +654,7 @@ impl FarmSpace {
     pub fn auto_upgrade(&mut self, total_packs_purchased: u32) -> Result<bool> {
         use crate::constants::FARM_UPGRADE_THRESHOLDS;
         
-        // Check if already at max level
+        // Check if already at max level (currently level 5, future expansion to 10)
         if self.level >= 5 {
             return Ok(false);
         }
@@ -739,8 +768,8 @@ impl Seed {
 /// Invite code account for referral system
 #[account]
 pub struct InviteCode {
-    /// 8-byte invite code
-    pub code: [u8; 8],
+    /// 12-byte invite code
+    pub code: [u8; 12],
     /// Address of the inviter who created this code
     pub inviter: Pubkey,
     /// Number of times this code has been used (alias for uses)
@@ -760,12 +789,12 @@ pub struct InviteCode {
     /// Invite limit for this code (alias for max_uses)
     pub invite_limit: u32,
     /// Reserved for future expansion
-    pub reserve: [u8; 14],
+    pub reserve: [u8; 10],
 }
 
 impl InviteCode {
     pub const LEN: usize = 8 + // discriminator
-        8 + // code
+        12 + // code (increased to 12)
         32 + // inviter
         4 + // uses
         4 + // max_uses
@@ -775,7 +804,7 @@ impl InviteCode {
         16 + // salt
         32 + // code_hash
         4 + // invite_limit
-        14; // reserve
+        10; // reserve (decreased to maintain total size)
         
 }
 

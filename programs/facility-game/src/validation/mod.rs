@@ -13,12 +13,12 @@ pub mod admin_validation;
 pub use common::{
     HasOwner, 
     validate_ownership,
-    validate_user_action_requirements,
-    validate_reward_claim_optimized,
     validate_token_balance,
-    validate_non_zero_amount,
     validate_quantity_range,
-    validate_batch_size,
+    validate_batch_plant_size,
+    validate_batch_remove_size,
+    validate_batch_plant_capacity,
+    validate_no_duplicate_seed_ids,
 };
 
 // Namespace exports for organized access to domain-specific validations
