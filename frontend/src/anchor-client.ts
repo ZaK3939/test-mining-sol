@@ -8,10 +8,6 @@ import {
   createAssociatedTokenAccountInstruction,
 } from '@solana/spl-token';
 import { logger } from './logger';
-import { PDAHelper, type PDAs } from './utils/pda-helper';
-import { cacheManager } from './utils/cache-manager';
-import { BatchFetcher } from './utils/batch-fetcher';
-import { ERROR_MESSAGES } from './utils/constants';
 import {
   type WalletAdapter,
   type UserStateAccount,
@@ -31,6 +27,25 @@ import idl from './idl/facility_game.json';
 
 // Type for the Farm Game IDL
 type FarmGameIDL = Idl;
+
+// PDA interface
+interface PDAs {
+  config: PublicKey;
+  globalStats: PublicKey;
+  rewardMint: PublicKey;
+  mintAuthority: PublicKey;
+  feePool: PublicKey;
+  treasury: PublicKey;
+  probabilityTable: PublicKey;
+  userState: PublicKey;
+  farmSpace: PublicKey;
+}
+
+// Error messages constants
+const ERROR_MESSAGES = {
+  USER_ALREADY_INITIALIZED: 'User is already initialized',
+  USER_NOT_INITIALIZED: 'User is not initialized',
+};
 
 // Program interface for type-safe account access
 interface ProgramAccountNamespace {
@@ -83,7 +98,7 @@ interface ProgramMethodNamespace {
       rpc(): Promise<string>;
     };
   };
-  claimReward(): {
+  claimRewardWithReferralRewards(): {
     accounts(accounts: Record<string, PublicKey>): {
       preInstructions?(instructions: unknown[]): {
         rpc(): Promise<string>;
@@ -159,7 +174,6 @@ interface TypedProgram {
 export class AnchorClient {
   private program: TypedProgram;
   private provider: AnchorProvider;
-  private batchFetcher: BatchFetcher;
 
   constructor(connection: Connection, wallet: WalletAdapter);
   constructor(provider: AnchorProvider);
@@ -180,24 +194,61 @@ export class AnchorClient {
       account: anchorProgram.account as ProgramAccountNamespace,
       methods: anchorProgram.methods as unknown as ProgramMethodNamespace,
     };
-
-    // Initialize batch fetcher for performance optimization
-    this.batchFetcher = new BatchFetcher(this.provider.connection);
   }
 
-  // Calculate PDAs using shared helper with caching
+  // Calculate PDAs for user
   async calculatePDAs(userPublicKey: PublicKey): Promise<PDAs> {
-    // Check cache first
-    const cached = cacheManager.getCachedPDAs(userPublicKey);
-    if (cached) {
-      return cached;
-    }
+    const [config] = PublicKey.findProgramAddressSync(
+      [Buffer.from('config')],
+      this.program.programId
+    );
 
-    // Calculate and cache PDAs
-    const pdas = await PDAHelper.calculatePDAs(userPublicKey, this.program.programId);
-    cacheManager.cachePDAs(userPublicKey, pdas);
+    const [globalStats] = PublicKey.findProgramAddressSync(
+      [Buffer.from('global_stats')],
+      this.program.programId
+    );
 
-    return pdas;
+    const [rewardMint] = PublicKey.findProgramAddressSync(
+      [Buffer.from('reward_mint')],
+      this.program.programId
+    );
+
+    const [mintAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from('mint_authority')],
+      this.program.programId
+    );
+
+    const [feePool] = PublicKey.findProgramAddressSync(
+      [Buffer.from('fee_pool')],
+      this.program.programId
+    );
+
+    const [probabilityTable] = PublicKey.findProgramAddressSync(
+      [Buffer.from('probability_table')],
+      this.program.programId
+    );
+
+    const [userState] = PublicKey.findProgramAddressSync(
+      [Buffer.from('user'), userPublicKey.toBuffer()],
+      this.program.programId
+    );
+
+    const [farmSpace] = PublicKey.findProgramAddressSync(
+      [Buffer.from('farm_space'), userPublicKey.toBuffer()],
+      this.program.programId
+    );
+
+    return {
+      config,
+      globalStats,
+      rewardMint,
+      mintAuthority,
+      feePool,
+      treasury: userPublicKey, // Will be set from config
+      probabilityTable,
+      userState,
+      farmSpace,
+    };
   }
 
   // Initialize config (admin only)
@@ -450,7 +501,7 @@ export class AnchorClient {
         tokenProgram: TOKEN_PROGRAM_ID,
       };
       
-      let txBuilder = this.program.methods.claimRewardWithReferralRewards().accountsPartial(accounts);
+      let txBuilder = this.program.methods.claimRewardWithReferralRewards().accounts(accounts);
 
       // Add ATA creation instruction if needed
       if (createATAInstruction && txBuilder.preInstructions) {
@@ -468,26 +519,15 @@ export class AnchorClient {
     }
   }
 
-  // Fetch user state with caching and type validation
+  // Fetch user state with type validation
   async fetchUserState(userPublicKey: PublicKey): Promise<UserStateAccount | null> {
     try {
-      // Check cache first
-      const cached = cacheManager.getCachedUserState(userPublicKey);
-      if (cached) {
-        return cached;
-      }
-
       const pdas = await this.calculatePDAs(userPublicKey);
       const userState = await this.program.account.userState.fetchNullable(pdas.userState);
 
       if (userState && !isUserStateAccount(userState)) {
         logger.warn('取得したユーザー状態の型が不正です');
         return null;
-      }
-
-      // Cache the result
-      if (userState) {
-        cacheManager.cacheUserState(userPublicKey, userState);
       }
 
       return userState;
@@ -498,26 +538,15 @@ export class AnchorClient {
     }
   }
 
-  // Fetch farm space with caching and type validation
+  // Fetch farm space with type validation
   async fetchFarmSpace(userPublicKey: PublicKey): Promise<FarmSpaceAccount | null> {
     try {
-      // Check cache first
-      const cached = cacheManager.getCachedFarmSpace(userPublicKey);
-      if (cached) {
-        return cached;
-      }
-
       const pdas = await this.calculatePDAs(userPublicKey);
       const farmSpace = await this.program.account.farmSpace.fetchNullable(pdas.farmSpace);
 
       if (farmSpace && !isFarmSpaceAccount(farmSpace)) {
         logger.warn('取得した農場スペース状態の型が不正です');
         return null;
-      }
-
-      // Cache the result
-      if (farmSpace) {
-        cacheManager.cacheFarmSpace(userPublicKey, farmSpace);
       }
 
       return farmSpace;
@@ -533,15 +562,9 @@ export class AnchorClient {
     return this.fetchFarmSpace(userPublicKey);
   }
 
-  // Fetch config with caching and type validation
+  // Fetch config with type validation
   async fetchConfig(): Promise<ConfigAccount | null> {
     try {
-      // Check cache first
-      const cached = cacheManager.getCachedConfig(this.program.programId);
-      if (cached) {
-        return cached;
-      }
-
       const [configPDA] = await PublicKey.findProgramAddress(
         [Buffer.from('config')],
         this.program.programId
@@ -551,11 +574,6 @@ export class AnchorClient {
       if (config && !isConfigAccount(config)) {
         logger.warn('取得した設定の型が不正です');
         return null;
-      }
-
-      // Cache the result
-      if (config) {
-        cacheManager.cacheConfig(this.program.programId, config);
       }
 
       return config;
@@ -924,18 +942,23 @@ export class AnchorClient {
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
 
-      // Convert invite code to byte array
-      const inviteCodeBytes = Array.from(Buffer.from(inviteCode.padEnd(8, '\0')).slice(0, 8));
+      // Import hash utilities dynamically to avoid issues
+      const { calculateInviteCodePDA, stringToInviteCodeBytes } = await import('./utils/invite-code-hash');
 
-      const [inviteCodePDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('invite_code'), Buffer.from(inviteCodeBytes)],
+      // Calculate hash-based PDA
+      const [inviteCodePDA] = await calculateInviteCodePDA(
+        inviteCode,
+        userPublicKey,
         this.program.programId
       );
+
+      // Convert invite code to byte array
+      const inviteCodeBytes = Array.from(stringToInviteCodeBytes(inviteCode));
 
       const tx = await this.program.methods
         .createInviteCode(inviteCodeBytes)
         .accounts({
-          inviteCodeAccount: inviteCodePDA,
+          inviteAccount: inviteCodePDA,
           config: pdas.config,
           inviter: userPublicKey,
           systemProgram: SystemProgram.programId,
@@ -952,36 +975,34 @@ export class AnchorClient {
     }
   }
 
-  // Use invite code
-  async useInviteCode(inviteCode: string): Promise<string> {
+  // Use invite code  
+  async useInviteCode(inviteCode: string, inviterPublicKey: PublicKey): Promise<string> {
     try {
       logger.info('🎟️ 招待コードを使用中...');
 
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
 
-      // Convert invite code to byte array
-      const inviteCodeBytes = Array.from(Buffer.from(inviteCode.padEnd(8, '\0')).slice(0, 8));
+      // Import hash utilities dynamically to avoid issues
+      const { calculateInviteCodePDA, stringToInviteCodeBytes } = await import('./utils/invite-code-hash');
 
-      const [inviteCodePDA] = await PublicKey.findProgramAddress(
-        [Buffer.from('invite_code'), Buffer.from(inviteCodeBytes)],
+      // Calculate hash-based PDA using the inviter's public key
+      const [inviteCodePDA] = await calculateInviteCodePDA(
+        inviteCode,
+        inviterPublicKey,
         this.program.programId
       );
 
-      // Get the invite code account to find the inviter
-      const inviteCodeAccount = await this.program.account.inviteCode?.fetchNullable?.(inviteCodePDA);
-      if (!inviteCodeAccount) {
-        throw new Error('Invite code not found');
-      }
+      // Convert invite code to byte array
+      const inviteCodeBytes = Array.from(stringToInviteCodeBytes(inviteCode));
 
       const tx = await this.program.methods
-        .useInviteCode(inviteCodeBytes)
+        .useInviteCode(inviteCodeBytes, inviterPublicKey)
         .accounts({
-          inviteCodeAccount: inviteCodePDA,
+          inviteAccount: inviteCodePDA,
           userState: pdas.userState,
           config: pdas.config,
           invitee: userPublicKey,
-          inviter: inviteCodeAccount.inviter,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
@@ -1071,7 +1092,7 @@ export class AnchorClient {
     return await getAssociatedTokenAddress(pdas.rewardMint, userPublicKey);
   }
 
-  // Optimized batch fetching for complete game state
+  // Fetch complete game state using parallel requests
   async fetchCompleteGameState(userPublicKey: PublicKey): Promise<{
     userState: UserStateAccount | null;
     farmSpace: FarmSpaceAccount | null;
@@ -1083,68 +1104,13 @@ export class AnchorClient {
     pendingReferralRewards: number;
   }> {
     try {
-      const pdas = await this.calculatePDAs(userPublicKey);
-
-      // Create batch request for all game state accounts
-      const batchRequests = BatchFetcher.createGameStateBatch(userPublicKey, {
-        userState: pdas.userState,
-        farmSpace: pdas.farmSpace,
-        config: pdas.config,
-        rewardMint: pdas.rewardMint,
-      });
-
-      // Fetch all accounts in a single batch
-      const results = await this.batchFetcher.fetchMultipleAccounts(batchRequests);
-
-      // Process results with caching
-      let userState: UserStateAccount | null = null;
-      let farmSpace: FarmSpaceAccount | null = null;
-      let config: ConfigAccount | null = null;
-
-      for (const result of results) {
-        if (result.account === null) continue;
-
-        switch (result.name) {
-          case 'userState':
-            try {
-              const decoded = this.program.coder.accounts.decode('userState', result.account.data) as unknown;
-              if (isUserStateAccount(decoded)) {
-                userState = decoded;
-                cacheManager.cacheUserState(userPublicKey, decoded);
-              }
-            } catch (e) {
-              logger.warn(`UserState decode error: ${e}`);
-            }
-            break;
-
-          case 'farmSpace':
-            try {
-              const decoded = this.program.coder.accounts.decode('farmSpace', result.account.data) as unknown;
-              if (isFarmSpaceAccount(decoded)) {
-                farmSpace = decoded;
-                cacheManager.cacheFarmSpace(userPublicKey, decoded);
-              }
-            } catch (e) {
-              logger.warn(`FarmSpace decode error: ${e}`);
-            }
-            break;
-
-          case 'config':
-            try {
-              const decoded = this.program.coder.accounts.decode('config', result.account.data) as unknown;
-              if (isConfigAccount(decoded)) {
-                config = decoded;
-                cacheManager.cacheConfig(this.program.programId, decoded);
-              }
-            } catch (e) {
-              logger.warn(`Config decode error: ${e}`);
-            }
-            break;
-        }
-      }
-
-      // Get token balance separately (more complex due to ATA)
-      const tokenBalance = await this.getTokenBalance(userPublicKey);
+      // Fetch all accounts in parallel for better performance
+      const [userState, farmSpace, config, tokenBalance] = await Promise.all([
+        this.fetchUserState(userPublicKey),
+        this.fetchFarmSpace(userPublicKey),
+        this.fetchConfig(),
+        this.getTokenBalance(userPublicKey),
+      ]);
 
       return {
         userState,
@@ -1158,31 +1124,26 @@ export class AnchorClient {
       };
     } catch (error) {
       logger.error(
-        `バッチゲーム状態取得エラー: ${error instanceof Error ? error.message : String(error)}`
+        `ゲーム状態取得エラー: ${error instanceof Error ? error.message : String(error)}`
       );
 
-      // Fallback to individual fetching
-      const userState = await this.fetchUserState(userPublicKey);
-      const farmSpace = await this.fetchFarmSpace(userPublicKey);
-      const config = await this.fetchConfig();
-      const tokenBalance = await this.getTokenBalance(userPublicKey);
-
+      // Return empty state on error
       return {
-        userState,
-        farmSpace,
-        config,
-        tokenBalance,
-        userInitialized: userState !== null,
-        hasFarmSpace: userState?.hasFarmSpace ?? false,
-        growPower: safeBNToNumber(farmSpace?.totalGrowPower) || 0,
-        pendingReferralRewards: userState ? safeBNToNumber(userState.pendingReferralRewards) : 0,
+        userState: null,
+        farmSpace: null,
+        config: null,
+        tokenBalance: 0,
+        userInitialized: false,
+        hasFarmSpace: false,
+        growPower: 0,
+        pendingReferralRewards: 0,
       };
     }
   }
 
-  // Cache invalidation for transactions
+  // Cache invalidation for transactions (no-op since we removed caching)
   invalidateUserCache(userPublicKey: PublicKey): void {
-    cacheManager.invalidateUserCache(userPublicKey);
+    // No-op: caching has been removed for simplicity
   }
 
   // Fetch global statistics for network share calculation
@@ -1229,8 +1190,7 @@ export class AnchorClient {
     await this.fetchCompleteGameState(userPublicKey);
     const batchTime = performance.now() - batchStart;
 
-    // Clear cache for fair comparison
-    cacheManager.invalidateUserCache(userPublicKey);
+    // Cache has been removed for simplicity
 
     // Measure individual performance
     const individualStart = performance.now();
