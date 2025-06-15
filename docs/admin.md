@@ -179,6 +179,132 @@ update_probability_table(
 }
 ```
 
+### 秘密シード管理システム
+
+#### シード公開機能
+新しい秘密シードを段階的に公開する管理機能：
+
+**シード公開命令**:
+```rust
+reveal_seed(
+    ctx: Context<RevealSeed>,
+    seed_index: u8,        // 0-15 (Seed1-Seed16)
+    grow_power: u64,       // シードのGrow Power値
+    probability_percentage: f32,  // 確率パーセンテージ
+)
+```
+
+**使用例**:
+```javascript
+// Seed9（index 8）を公開 - 60,000 GP、1.5%確率
+await client.revealSeed(8, 60000, 1.5);
+
+// Seed16（index 15）を公開 - 10,000,000 GP、0.1%確率
+await client.revealSeed(15, 10000000, 0.1);
+```
+
+#### シード値更新機能
+既に公開済みのシードの値を変更する管理機能：
+
+**シード値更新命令**:
+```rust
+update_seed_values(
+    ctx: Context<UpdateSeedValues>,
+    seed_index: u8,        // 0-15 (Seed1-Seed16)
+    grow_power: u64,       // 新しいGrow Power値
+    probability_percentage: f32,  // 新しい確率パーセンテージ
+)
+```
+
+**使用例**:
+```javascript
+// Seed1のGrow Powerを100から150に増加
+await client.updateSeedValues(0, 150, 30.0);
+
+// Seed8の確率を3%から5%に変更
+await client.updateSeedValues(7, 30000, 5.0);
+```
+
+#### 秘密シード管理戦略
+
+**段階的公開スケジュール**:
+```javascript
+// 第1段階: ゲーム開始（8シード公開済み）
+const initialSeeds = {
+  revealed: [0, 1, 2, 3, 4, 5, 6, 7], // Seed1-8
+  hidden: [8, 9, 10, 11, 12, 13, 14, 15] // Seed9-16
+};
+
+// 第2段階: 1ヶ月後（中級シード公開）
+const phase2 = {
+  newReveals: [8, 9], // Seed9-10公開
+  revealedTotal: 10
+};
+
+// 第3段階: 3ヶ月後（高級シード公開）
+const phase3 = {
+  newReveals: [10, 11, 12], // Seed11-13公開
+  revealedTotal: 13
+};
+
+// 最終段階: 6ヶ月後（最上級シード公開）
+const finalPhase = {
+  newReveals: [13, 14, 15], // Seed14-16公開
+  revealedTotal: 16
+};
+```
+
+**イベント連動公開**:
+```javascript
+// 特別イベント時の限定公開
+const eventReveal = {
+  event: "Anniversary Event",
+  duration: "2週間限定",
+  specialSeed: {
+    index: 14, // Seed15
+    growPower: 5000000,
+    probability: 0.2,
+    temporaryBoost: true // イベント終了後に確率調整
+  }
+};
+```
+
+#### バランス調整システム
+
+**定期バランス更新**:
+```javascript
+// 週次調整例
+const weeklyBalance = {
+  schedule: "毎週月曜日",
+  adjustmentRange: "±10%以内",
+  targetSeeds: [0, 1, 2, 3], // 基本シードのみ
+  approval: "ゲームマスター"
+};
+
+// 月次大型調整例
+const monthlyBalance = {
+  schedule: "月初",
+  adjustmentRange: "±50%以内", 
+  targetSeeds: [4, 5, 6, 7], // 中級シード
+  approval: "運営チーム承認"
+};
+```
+
+**メタゲーム対応**:
+```javascript
+// プレイヤー行動に基づく動的調整
+const metaAdjustment = {
+  trigger: "特定シード使用率 > 60%",
+  action: "確率調整で分散化",
+  example: {
+    seedIndex: 5, // Seed6が人気過ぎる場合
+    oldProbability: 4.0,
+    newProbability: 2.5, // 確率を下げてバランス調整
+    compensation: "他シードの確率を微増"
+  }
+};
+```
+
 #### 頻繁更新の管理戦略
 
 **バージョン管理**:

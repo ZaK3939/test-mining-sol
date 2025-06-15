@@ -156,19 +156,15 @@ describe("Admin Instructions", () => {
 
   describe("create_reward_mint", () => {
     it("Should create reward mint successfully", async () => {
-      const metadataAccount = Keypair.generate();
-      
       const signature = await testEnv.program.methods
         .createRewardMint()
         .accountsPartial({
           rewardMint: testEnv.pdas.rewardMintPda,
           mintAuthority: testEnv.pdas.mintAuthorityPda,
-          metadataAccount: metadataAccount.publicKey,
           admin: testEnv.accounts.admin.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: anchor.web3.SystemProgram.programId,
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-          tokenMetadataProgram: new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"),
         })
         .signers([testEnv.accounts.admin])
         .rpc();

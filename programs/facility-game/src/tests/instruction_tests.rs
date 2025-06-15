@@ -102,14 +102,15 @@ mod instruction_tests {
     fn test_seed_creation() {
         let owner = Pubkey::new_unique();
         let seed = Seed {
-            owner,
+            seed_id: 1,
             seed_type: SeedType::Seed1,
+            owner,
             grow_power: 100,
+            planted_at: 0,
             is_planted: false,
             planted_farm_space: None,
             created_at: 1640995200, // Mock timestamp
-            seed_id: 1,
-            reserve: [0; 32],
+            reserve: [0; 16],
         };
         
         assert_eq!(seed.owner, owner);
@@ -121,24 +122,29 @@ mod instruction_tests {
 
     #[test]
     fn test_seed_pack_creation() {
-        let purchaser = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
         let vrf_account = Pubkey::new_unique();
         
         let seed_pack = SeedPack {
-            purchaser,
+            pack_id: 1,
+            owner,
+            quantity: 3,
+            is_opened: false,
+            table_version: 1,
+            vrf_request: Some(vrf_account),
+            random_seed: None,
             purchased_at: 1640995200,
+            opened_at: None,
             cost_paid: SEED_PACK_COST * 3,
             vrf_fee_paid: 0,
-            is_opened: false,
-            vrf_sequence: 1,
-            user_entropy_seed: 12345,
-            final_random_value: 0,
-            pack_id: 1,
-            vrf_account,
+            vrf_sequence: Some(1),
+            user_entropy_seed: Some(12345),
+            final_random_value: Some(0),
+            vrf_account: Some(vrf_account),
             reserve: [0; 8],
         };
         
-        assert_eq!(seed_pack.purchaser, purchaser);
+        assert_eq!(seed_pack.owner, owner);
         assert_eq!(seed_pack.cost_paid, SEED_PACK_COST * 3);
         assert!(!seed_pack.is_opened);
         assert_eq!(seed_pack.pack_id, 1);
@@ -150,15 +156,56 @@ mod instruction_tests {
         let seed_storage = SeedStorage {
             owner,
             seed_ids: vec![],
+            seed_types: vec![],
             total_seeds: 0,
-            seed_type_counts: [0; 9],
-            reserve: [0; 16],
+            seed_type_counts: [0; 16],
+            reserve: [0; 8],
         };
         
         assert_eq!(seed_storage.owner, owner);
         assert_eq!(seed_storage.seed_ids.len(), 0);
+        assert_eq!(seed_storage.seed_types.len(), 0);
         assert_eq!(seed_storage.total_seeds, 0);
         assert_eq!(seed_storage.seed_type_counts.iter().sum::<u16>(), 0);
+    }
+
+    #[test]
+    fn test_fifo_seed_discard_by_type() {
+        let owner = Pubkey::new_unique();
+        let mut seed_storage = SeedStorage {
+            owner,
+            seed_ids: vec![],
+            seed_types: vec![],
+            total_seeds: 0,
+            seed_type_counts: [0; 16],
+            reserve: [0; 8],
+        };
+        
+        // Add 3 seeds of Seed1 type (oldest to newest: 1, 2, 3)
+        seed_storage.add_seed(1, &SeedType::Seed1).unwrap();
+        seed_storage.add_seed(2, &SeedType::Seed1).unwrap();
+        seed_storage.add_seed(3, &SeedType::Seed1).unwrap();
+        
+        // Add a seed of different type
+        seed_storage.add_seed(4, &SeedType::Seed2).unwrap();
+        
+        assert_eq!(seed_storage.total_seeds, 4);
+        assert_eq!(seed_storage.seed_type_counts[0], 3); // Seed1 count
+        assert_eq!(seed_storage.seed_type_counts[1], 1); // Seed2 count
+        
+        // Verify storage structure is correct (ID and type vectors are parallel)
+        assert_eq!(seed_storage.seed_ids, vec![1, 2, 3, 4]);
+        assert_eq!(seed_storage.seed_types, vec![SeedType::Seed1, SeedType::Seed1, SeedType::Seed1, SeedType::Seed2]);
+        
+        // Remove oldest Seed1 (ID: 1)
+        let removed = seed_storage.remove_seed(1, &SeedType::Seed1);
+        assert!(removed);
+        assert_eq!(seed_storage.total_seeds, 3);
+        assert_eq!(seed_storage.seed_type_counts[0], 2); // Seed1 count reduced
+        
+        // Verify correct removal - parallel vectors maintained
+        assert_eq!(seed_storage.seed_ids, vec![2, 3, 4]);
+        assert_eq!(seed_storage.seed_types, vec![SeedType::Seed1, SeedType::Seed1, SeedType::Seed2]);
     }
 
     #[test]
@@ -212,7 +259,7 @@ mod instruction_tests {
         assert!(upgrade_needed);
         assert_eq!(user_state.total_packs_purchased, 30);
         
-        let upgraded = farm_space.auto_upgrade(user_state.total_packs_purchased);
+        let upgraded = farm_space.auto_upgrade(user_state.total_packs_purchased).unwrap();
         assert!(upgraded);
         assert_eq!(farm_space.level, 2);
         assert_eq!(farm_space.capacity, 6);
@@ -222,19 +269,19 @@ mod instruction_tests {
         assert!(upgrade_needed);
         assert_eq!(user_state.total_packs_purchased, 100);
         
-        let upgraded = farm_space.auto_upgrade(user_state.total_packs_purchased);
+        let upgraded = farm_space.auto_upgrade(user_state.total_packs_purchased).unwrap();
         assert!(upgraded);
         assert_eq!(farm_space.level, 3);
-        assert_eq!(farm_space.capacity, 8);
+        assert_eq!(farm_space.capacity, 10); // Updated capacity for level 3
         
         // Test purchasing 5 more packs (total 105, should NOT trigger upgrade)
         let upgrade_needed = user_state.increment_pack_purchases(5);
         assert!(!upgrade_needed);
         assert_eq!(user_state.total_packs_purchased, 105);
         
-        let upgraded = farm_space.auto_upgrade(user_state.total_packs_purchased);
+        let upgraded = farm_space.auto_upgrade(user_state.total_packs_purchased).unwrap();
         assert!(!upgraded); // No upgrade should occur
         assert_eq!(farm_space.level, 3); // Still level 3
-        assert_eq!(farm_space.capacity, 8); // Still capacity 8
+        assert_eq!(farm_space.capacity, 10); // Still capacity 10
     }
 }

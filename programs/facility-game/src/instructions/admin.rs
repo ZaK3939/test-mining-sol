@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::Token2022;
 use spl_token_2022::extension::transfer_fee::instruction::initialize_transfer_fee_config;
-use mpl_token_metadata::types::DataV2;
+// Removed unused DataV2 import
 use crate::state::*;
 
 /// Context for initializing global configuration
@@ -204,52 +204,7 @@ pub fn create_reward_mint(ctx: Context<CreateRewardMint>) -> Result<()> {
     Ok(())
 }
 
-/// Helper function to create token metadata
-fn create_token_metadata(ctx: &Context<CreateRewardMint>) -> Result<()> {
-    let token_data = DataV2 {
-        name: "Weed Token".to_string(),
-        symbol: "WEED".to_string(),
-        uri: "".to_string(), // Can be updated later with IPFS metadata
-        seller_fee_basis_points: 0,
-        creators: None,
-        collection: None,
-        uses: None,
-    };
-    
-    let bump = ctx.bumps.mint_authority;
-    let seeds = &[b"mint_authority".as_ref(), &[bump]];
-    let signer_seeds = &[&seeds[..]];
-    
-    let create_metadata_ix = mpl_token_metadata::instructions::CreateMetadataAccountV3Builder::new()
-        .metadata(ctx.accounts.metadata_account.key())
-        .mint(ctx.accounts.reward_mint.key())
-        .mint_authority(ctx.accounts.mint_authority.key())
-        .payer(ctx.accounts.admin.key())
-        .update_authority(ctx.accounts.mint_authority.key(), true)
-        .system_program(ctx.accounts.system_program.key())
-        .rent(Some(ctx.accounts.rent.key()))
-        .data(token_data)
-        .is_mutable(true)
-        .instruction();
-    
-    anchor_lang::solana_program::program::invoke_signed(
-        &create_metadata_ix,
-        &[
-            ctx.accounts.metadata_account.to_account_info(),
-            ctx.accounts.reward_mint.to_account_info(),
-            ctx.accounts.mint_authority.to_account_info(),
-            ctx.accounts.admin.to_account_info(),
-            ctx.accounts.mint_authority.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.rent.to_account_info(),
-            ctx.accounts.token_metadata_program.to_account_info(),
-        ],
-        signer_seeds,
-    )?;
-    
-    msg!("WEED token metadata created successfully");
-    Ok(())
-}
+// Removed unused create_token_metadata function
 
 /// Context for initializing global stats
 #[derive(Accounts)]
@@ -456,7 +411,7 @@ pub fn initialize_probability_table(ctx: Context<InitializeProbabilityTable>) ->
     probability_table.name = table_data.name;
     probability_table.created_at = current_time;
     probability_table.updated_at = current_time;
-    probability_table.reserve = [0; 32];
+    probability_table.reserve = [0; 14];
     
     msg!("Probability table initialized with Table 1 settings (6 seeds)");
     msg!("Expected value: {} GP per pack", probability_table.expected_value);
@@ -478,7 +433,7 @@ pub fn update_probability_table(
     let probability_table = &mut ctx.accounts.probability_table;
     
     // Validate input constraints
-    require!(seed_count <= 9, crate::error::GameError::InvalidQuantity);
+    require!(seed_count <= 16, crate::error::GameError::InvalidQuantity);
     require!(grow_powers.len() == seed_count as usize, crate::error::GameError::InvalidQuantity);
     require!(probability_thresholds.len() == seed_count as usize, crate::error::GameError::InvalidQuantity);
     require!(probability_percentages.len() == seed_count as usize, crate::error::GameError::InvalidQuantity);
@@ -503,9 +458,9 @@ pub fn update_probability_table(
     probability_table.updated_at = Clock::get()?.unix_timestamp;
     
     // Clear arrays first
-    probability_table.grow_powers = [0; 9];
-    probability_table.probability_thresholds = [0; 9];
-    probability_table.probability_percentages = [0.0; 9];
+    probability_table.grow_powers = [0; 16];
+    probability_table.probability_thresholds = [0; 16];
+    probability_table.probability_percentages = [0.0; 16];
     probability_table.name = [0; 32];
     
     // Set new values
@@ -541,6 +496,48 @@ pub struct UpdateSeedPackCost<'info> {
     pub admin: Signer<'info>,
 }
 
+/// Context for revealing a new seed type
+#[derive(Accounts)]
+pub struct RevealSeed<'info> {
+    #[account(
+        mut,
+        seeds = [b"probability_table"],
+        bump
+    )]
+    pub probability_table: Account<'info, ProbabilityTable>,
+    
+    #[account(
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ crate::error::GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+    
+    #[account(mut)]
+    pub admin: Signer<'info>,
+}
+
+/// Context for updating seed values
+#[derive(Accounts)]
+pub struct UpdateSeedValues<'info> {
+    #[account(
+        mut,
+        seeds = [b"probability_table"],
+        bump
+    )]
+    pub probability_table: Account<'info, ProbabilityTable>,
+    
+    #[account(
+        seeds = [b"config"],
+        bump,
+        constraint = config.admin == admin.key() @ crate::error::GameError::Unauthorized
+    )]
+    pub config: Account<'info, Config>,
+    
+    #[account(mut)]
+    pub admin: Signer<'info>,
+}
+
 /// Update seed pack cost (admin only)
 /// Allows dynamic price adjustment for seed packs
 pub fn update_seed_pack_cost(
@@ -562,6 +559,81 @@ pub fn update_seed_pack_cost(
     msg!("Seed pack cost updated from {} to {} WEED", 
          old_cost / 1_000_000, 
          new_seed_pack_cost / 1_000_000);
+    
+    Ok(())
+}
+
+/// Reveal a new seed type (admin only)
+/// Makes a previously hidden seed type visible to users with its values
+pub fn reveal_seed(
+    ctx: Context<RevealSeed>,
+    seed_index: u8,
+    grow_power: u64,
+    probability_percentage: f32,
+) -> Result<()> {
+    let probability_table = &mut ctx.accounts.probability_table;
+    
+    // Validation: seed index must be valid
+    require!(seed_index < 16, crate::error::GameError::InvalidConfig);
+    
+    // Validation: seed must not already be revealed
+    require!(!probability_table.is_seed_revealed(seed_index), crate::error::GameError::InvalidConfig);
+    
+    // Validation: probability percentage should be reasonable (0-100%)
+    require!(probability_percentage >= 0.0 && probability_percentage <= 100.0, crate::error::GameError::InvalidConfig);
+    
+    // Validation: grow power should be positive
+    require!(grow_power > 0, crate::error::GameError::InvalidConfig);
+    
+    // Reveal the seed
+    let success = probability_table.reveal_seed(seed_index, grow_power, probability_percentage);
+    require!(success, crate::error::GameError::InvalidConfig);
+    
+    // Update the table timestamp
+    probability_table.updated_at = Clock::get()?.unix_timestamp;
+    
+    msg!("Seed type {} revealed: grow_power={}, probability={}%", 
+         seed_index + 1, grow_power, probability_percentage);
+    
+    Ok(())
+}
+
+/// Update values for an already revealed seed type (admin only)
+/// Allows changing grow power and probability for existing revealed seeds
+pub fn update_seed_values(
+    ctx: Context<UpdateSeedValues>,
+    seed_index: u8,
+    grow_power: u64,
+    probability_percentage: f32,
+) -> Result<()> {
+    let probability_table = &mut ctx.accounts.probability_table;
+    
+    // Validation: seed index must be valid
+    require!(seed_index < 16, crate::error::GameError::InvalidConfig);
+    
+    // Validation: seed must already be revealed
+    require!(probability_table.is_seed_revealed(seed_index), crate::error::GameError::InvalidConfig);
+    
+    // Validation: probability percentage should be reasonable (0-100%)
+    require!(probability_percentage >= 0.0 && probability_percentage <= 100.0, crate::error::GameError::InvalidConfig);
+    
+    // Validation: grow power should be positive
+    require!(grow_power > 0, crate::error::GameError::InvalidConfig);
+    
+    // Store old values for logging
+    let old_grow_power = probability_table.grow_powers[seed_index as usize];
+    let old_probability = probability_table.probability_percentages[seed_index as usize];
+    
+    // Update the seed values
+    let success = probability_table.update_seed_values(seed_index, grow_power, probability_percentage);
+    require!(success, crate::error::GameError::InvalidConfig);
+    
+    // Update the table timestamp
+    probability_table.updated_at = Clock::get()?.unix_timestamp;
+    
+    msg!("Seed type {} values updated:", seed_index + 1);
+    msg!("  Grow power: {} -> {}", old_grow_power, grow_power);
+    msg!("  Probability: {}% -> {}%", old_probability, probability_percentage);
     
     Ok(())
 }

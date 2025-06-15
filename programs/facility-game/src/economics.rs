@@ -77,7 +77,11 @@ pub fn calculate_rewards_across_halving(
     // If we're past the first halving point, adjust starting parameters
     if start_time >= next_halving_time {
         let halvings_passed = ((start_time - next_halving_time) / halving_interval) + 1;
-        current_rate = base_rate >> halvings_passed.min(63); // Prevent overflow in shift
+        // Apply halvings by repeatedly dividing by 2
+        current_rate = base_rate;
+        for _ in 0..halvings_passed.min(63) { // Prevent excessive halvings
+            current_rate = current_rate / 2;
+        }
         current_halving_time = next_halving_time + (halvings_passed * halving_interval);
     }
     
@@ -291,6 +295,38 @@ pub fn calculate_upgrade_breakeven_time(
     Ok(upgrade_cost / additional_rewards_per_second)
 }
 
+// ===== GROW POWER SHARE CALCULATIONS =====
+
+/// Calculate user's grow power percentage share of total
+/// Returns percentage as f64 (e.g., 12.5 for 12.5%)
+pub fn calculate_grow_power_percentage(
+    user_grow_power: u64,
+    total_grow_power: u64,
+) -> f64 {
+    if total_grow_power == 0 {
+        return 0.0;
+    }
+    
+    (user_grow_power as f64 / total_grow_power as f64) * 100.0
+}
+
+/// Calculate user's grow power share as basis points (1/100th of a percent)
+/// Returns basis points (e.g., 1250 for 12.5%)
+pub fn calculate_grow_power_share_bps(
+    user_grow_power: u64,
+    total_grow_power: u64,
+) -> u64 {
+    if total_grow_power == 0 {
+        return 0;
+    }
+    
+    // Use basis points (10000 = 100%) for precision
+    user_grow_power.checked_mul(10000)
+        .unwrap_or(0)
+        .checked_div(total_grow_power)
+        .unwrap_or(0)
+}
+
 // ===== PROBABILITY CALCULATIONS =====
 
 /// Calculate cumulative probability for seed types
@@ -477,5 +513,134 @@ mod tests {
         
         let result = calculate_user_share_reward(large_value, large_value, 100, 100);
         assert!(result.is_ok() || result.unwrap_err().to_string().contains("overflow"));
+    }
+
+    #[test]
+    fn test_multiple_halving_periods() {
+        // Test reward calculation spanning multiple halving periods
+        let user_grow_power = 1000;
+        let total_grow_power = 10000; // User has 10% share
+        let base_rate = 100;
+        let halving_interval = 200; // 200 seconds per halving
+        
+        // Start time: 0, Current time: 500 (spans 2.5 halving periods)
+        let last_harvest_time = 0;
+        let current_time = 500;
+        let next_halving_time = 200;
+        
+        let total_reward = calculate_rewards_across_halving(
+            user_grow_power,
+            total_grow_power,
+            base_rate,
+            last_harvest_time,
+            current_time,
+            next_halving_time,
+            halving_interval,
+        ).unwrap();
+        
+        // Manual calculation:
+        // Period 1 (0-200): rate=100, time=200, share=10% -> 200 * 100 * 100 / 1000 = 2000
+        // Period 2 (200-400): rate=50, time=200, share=10% -> 200 * 50 * 100 / 1000 = 1000  
+        // Period 3 (400-500): rate=25, time=100, share=10% -> 100 * 25 * 100 / 1000 = 250
+        // Total expected: 2000 + 1000 + 250 = 3250
+        
+        assert_eq!(total_reward, 3250, "Multiple halving calculation should be correct");
+        
+        // Test edge case: start after multiple halvings
+        let late_start_time = 450; // Start in third period
+        let late_reward = calculate_rewards_across_halving(
+            user_grow_power,
+            total_grow_power,
+            base_rate,
+            late_start_time,
+            current_time,
+            next_halving_time,
+            halving_interval,
+        ).unwrap();
+        
+        // Only period 3 (450-500): rate=25, time=50, share=10% -> 50 * 25 * 100 / 1000 = 125
+        assert_eq!(late_reward, 125, "Late start halving calculation should be correct");
+    }
+
+    #[test]
+    fn test_grow_power_percentage_calculations() {
+        // Test percentage calculation
+        let percentage = calculate_grow_power_percentage(1000, 10000);
+        assert_eq!(percentage, 10.0, "Should calculate 10% correctly");
+        
+        let percentage = calculate_grow_power_percentage(2500, 10000);
+        assert_eq!(percentage, 25.0, "Should calculate 25% correctly");
+        
+        let percentage = calculate_grow_power_percentage(0, 10000);
+        assert_eq!(percentage, 0.0, "Zero grow power should give 0%");
+        
+        let percentage = calculate_grow_power_percentage(1000, 0);
+        assert_eq!(percentage, 0.0, "Zero total should give 0%");
+        
+        // Test high precision case
+        let percentage = calculate_grow_power_percentage(1, 3);
+        assert!((percentage - 33.333333333333336).abs() < 0.0001, "Should handle precision correctly");
+        
+        // Test basis points calculation
+        let bps = calculate_grow_power_share_bps(1000, 10000);
+        assert_eq!(bps, 1000, "Should calculate 1000 bps (10%) correctly");
+        
+        let bps = calculate_grow_power_share_bps(2500, 10000);
+        assert_eq!(bps, 2500, "Should calculate 2500 bps (25%) correctly");
+        
+        let bps = calculate_grow_power_share_bps(1, 3);
+        assert_eq!(bps, 3333, "Should handle precision with basis points");
+        
+        let bps = calculate_grow_power_share_bps(0, 10000);
+        assert_eq!(bps, 0, "Zero grow power should give 0 bps");
+        
+        let bps = calculate_grow_power_share_bps(1000, 0);
+        assert_eq!(bps, 0, "Zero total should give 0 bps");
+    }
+
+    #[test]
+    fn test_complex_halving_scenarios() {
+        // Test various complex halving scenarios
+        let user_grow_power = 5000;
+        let total_grow_power = 100000; // User has 5% share
+        let base_rate = 1000;
+        let halving_interval = 100;
+        
+        // Test 1: Exact halving boundary
+        let reward = calculate_rewards_across_halving(
+            user_grow_power, total_grow_power, base_rate,
+            0, 100, 100, halving_interval
+        ).unwrap();
+        // Period: 0-100, rate=1000, time=100, share=5% -> 100 * 1000 * 50 / 1000 = 5000
+        assert_eq!(reward, 5000);
+        
+        // Test 2: Start exactly at halving point
+        let reward = calculate_rewards_across_halving(
+            user_grow_power, total_grow_power, base_rate,
+            100, 200, 100, halving_interval
+        ).unwrap();
+        // Period: 100-200, rate=500 (halved), time=100, share=5% -> 100 * 500 * 50 / 1000 = 2500
+        assert_eq!(reward, 2500);
+        
+        // Test 3: Multiple complete periods
+        let reward = calculate_rewards_across_halving(
+            user_grow_power, total_grow_power, base_rate,
+            0, 400, 100, halving_interval
+        ).unwrap();
+        // Period 1: 0-100, rate=1000 -> 5000
+        // Period 2: 100-200, rate=500 -> 2500
+        // Period 3: 200-300, rate=250 -> 1250
+        // Period 4: 300-400, rate=125 -> 625
+        // Total: 5000 + 2500 + 1250 + 625 = 9375
+        assert_eq!(reward, 9375);
+        
+        // Test 4: Very long period spanning many halvings
+        let reward = calculate_rewards_across_halving(
+            user_grow_power, total_grow_power, base_rate,
+            0, 1000, 100, halving_interval
+        ).unwrap();
+        // Should handle 10 halving periods correctly
+        assert!(reward > 0, "Should calculate rewards for many halving periods");
+        assert!(reward < 20000, "Should converge due to halving effect");
     }
 }

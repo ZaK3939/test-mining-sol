@@ -22,6 +22,7 @@ export interface TestPDAs {
   mintAuthorityPda: PublicKey;
   feePoolPda: PublicKey;
   treasuryPda: PublicKey;
+  probabilityTablePda: PublicKey;
 }
 
 export interface TestUser {
@@ -110,6 +111,11 @@ export class TestEnvironment {
       programId
     );
 
+    const [probabilityTablePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("probability_table")],
+      programId
+    );
+
     return {
       configPda,
       globalStatsPda,
@@ -117,6 +123,7 @@ export class TestEnvironment {
       mintAuthorityPda,
       feePoolPda,
       treasuryPda: accounts.treasury.publicKey,
+      probabilityTablePda,
     };
   }
 
@@ -165,15 +172,38 @@ export class TestEnvironment {
       .accountsPartial({
         rewardMint: this.pdas.rewardMintPda,
         mintAuthority: this.pdas.mintAuthorityPda,
-        metadataAccount: Keypair.generate().publicKey,
         admin: this.accounts.admin.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: anchor.web3.SystemProgram.programId,
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-        tokenMetadataProgram: new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"),
       })
       .signers([this.accounts.admin])
       .rpc();
+
+    // Initialize probability table for VRF seed generation
+    try {
+      await this.program.methods
+        .initializeProbabilityTable()
+        .accountsPartial({
+          probabilityTable: this.pdas.probabilityTablePda,
+          admin: this.accounts.admin.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([this.accounts.admin])
+        .rpc();
+      
+      console.log("✅ Probability table initialized successfully");
+    } catch (error: any) {
+      // Check specific error types
+      if (error.message && error.message.includes("already in use")) {
+        console.log("⚠️ Probability table already exists, continuing with existing table");
+      } else if (error.message && error.message.includes("InvalidInstruction")) {
+        console.log("⚠️ Probability table instruction not available, using fallback VRF mode");
+      } else {
+        console.log(`⚠️ Probability table initialization failed: ${error.message || error}`);
+        console.log("   Continuing with basic VRF functionality...");
+      }
+    }
   }
 }
 

@@ -14,7 +14,7 @@ use crate::constants::*;
 // - validate_farm_space_ownership -> game_validation.rs
 
 /// Generic ownership validation for any structure with an owner field
-pub fn validate_ownership<T>(account: &T, expected_owner: Pubkey, error: GameError) -> Result<()>
+pub fn validate_ownership<T>(account: &T, expected_owner: Pubkey, _error: GameError) -> Result<()>
 where
     T: HasOwner,
 {
@@ -116,7 +116,7 @@ pub fn validate_invite_code_format(code: &[u8; 8]) -> Result<()> {
 /// Validate invite limit not exceeded (for hash-based system)
 pub fn validate_secret_invite_limit(secret_invite_code: &InviteCode) -> Result<()> {
     require!(
-        secret_invite_code.invites_used < secret_invite_code.invite_limit,
+        secret_invite_code.uses < secret_invite_code.invite_limit,
         GameError::InviteCodeLimitReached
     );
     Ok(())

@@ -71,12 +71,6 @@ export class SimpleClient {
     const userPublicKey = this.provider.wallet.publicKey;
     const pdas = await this.calculatePDAs(userPublicKey);
     
-    const TOKEN_METADATA_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
-    const [metadataAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from('metadata'), TOKEN_METADATA_PROGRAM_ID.toBuffer(), pdas.rewardMint.toBuffer()],
-      TOKEN_METADATA_PROGRAM_ID
-    );
-
     const tx = await this.program.methods
       .createRewardMint()
       .accountsPartial({
@@ -84,12 +78,10 @@ export class SimpleClient {
         mintAuthority: pdas.mintAuthority,
         transferFeeConfigAuthority: pdas.mintAuthority,
         withdrawWithheldAuthority: userPublicKey,
-        metadataAccount: metadataAccount,
         admin: userPublicKey,
         tokenProgram: new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'),
         systemProgram: SystemProgram.programId,
         rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
-        tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
       })
       .rpc();
       

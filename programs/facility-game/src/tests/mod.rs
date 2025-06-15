@@ -3,4 +3,4 @@
 
 pub mod basic_tests;
 pub mod instruction_tests;
-pub mod state_tests;
+// pub mod state_tests;

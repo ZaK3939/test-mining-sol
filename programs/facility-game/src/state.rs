@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use crate::error::*;
 
 // VRF専用にするため、RandomnessMethodは削除
 // 全てSwitchboard VRFで統一
@@ -80,20 +79,46 @@ pub struct FarmSpace {
     pub reserve: [u8; 32],
 }
 
+/// Seed types with dynamic grow power and probabilities
+/// Initially 8 types are known, additional types are secret until revealed
+#[derive(Clone, Copy, PartialEq, Eq, AnchorSerialize, AnchorDeserialize, Debug)]
+pub enum SeedType {
+    Seed1,      // Known: Basic seed type
+    Seed2,      // Known: Basic seed type
+    Seed3,      // Known: Basic seed type
+    Seed4,      // Known: Basic seed type
+    Seed5,      // Known: Basic seed type
+    Seed6,      // Known: Basic seed type
+    Seed7,      // Known: Basic seed type
+    Seed8,      // Known: Basic seed type
+    Seed9,      // Secret: Values hidden until revealed
+    Seed10,     // Secret: Values hidden until revealed
+    Seed11,     // Secret: Values hidden until revealed
+    Seed12,     // Secret: Values hidden until revealed
+    Seed13,     // Secret: Values hidden until revealed
+    Seed14,     // Secret: Values hidden until revealed
+    Seed15,     // Secret: Values hidden until revealed
+    Seed16,     // Secret: Values hidden until revealed
+}
+
 /// Dynamic probability table for seed generation
-/// Allows admin to update probabilities without code changes
 /// Supports up to 16 seed types for extensive variety and frequent updates
+/// Includes secret seed management for hidden seed types
 #[account]
 pub struct ProbabilityTable {
-    /// Table version number for tracking updates (supports frequent updates)
+    /// Table version number for tracking frequent updates
     pub version: u32,
     /// Number of seed types in this table (1-16 for maximum flexibility)
     pub seed_count: u8,
+    /// Number of revealed seed types (initially 8, can be increased)
+    pub revealed_seed_count: u8,
     /// Grow power values for each seed type (max 16 types)
+    /// Hidden values for secret seeds are encrypted or set to 0
     pub grow_powers: [u64; 16],
     /// Probability thresholds for cumulative distribution (max 16 types)
     pub probability_thresholds: [u16; 16],
     /// Human-readable probability percentages (max 16 types)
+    /// Hidden values for secret seeds are set to 0
     pub probability_percentages: [f32; 16],
     /// Expected value of a pack with this table
     pub expected_value: u64,
@@ -103,14 +128,19 @@ pub struct ProbabilityTable {
     pub created_at: i64,
     /// Last update timestamp
     pub updated_at: i64,
+    /// Table category for organization (e.g., "seasonal", "premium", "event")
+    pub category: [u8; 16],
+    /// Bitfield indicating which seed types are revealed (bit 0 = Seed1, bit 1 = Seed2, etc.)
+    pub revealed_seeds_mask: u16,
     /// Reserved for future expansion
-    pub reserve: [u8; 16], // Reduced due to larger arrays
+    pub reserve: [u8; 14],
 }
 
 impl ProbabilityTable {
     pub const LEN: usize = 8 + // discriminator
         4 + // version
         1 + // seed_count
+        1 + // revealed_seed_count
         128 + // grow_powers (16 * 8)
         32 + // probability_thresholds (16 * 2)
         64 + // probability_percentages (16 * 4)
@@ -118,13 +148,16 @@ impl ProbabilityTable {
         32 + // name
         8 + // created_at
         8 + // updated_at
-        16; // reserve (reduced due to larger arrays)
+        16 + // category
+        2 + // revealed_seeds_mask
+        14; // reserve
 
-    /// Initialize with Table 1 settings (6 seeds)
-    pub fn init_table_1() -> Self {
+    /// Initialize with standard 8-seed table (initially revealed)
+    pub fn init_standard_table() -> Self {
         let mut table = Self {
             version: 1,
-            seed_count: 6,
+            seed_count: 8,              // Start with 8 seeds
+            revealed_seed_count: 8,     // All 8 are initially revealed
             grow_powers: [0; 16],
             probability_thresholds: [0; 16],
             probability_percentages: [0.0; 16],
@@ -132,20 +165,72 @@ impl ProbabilityTable {
             name: [0; 32],
             created_at: 0,
             updated_at: 0,
-            reserve: [0; 16],
+            category: [0; 16],
+            revealed_seeds_mask: 0xFF,  // First 8 bits set (seeds 1-8 revealed)
+            reserve: [0; 14],
         };
         
-        // Table 1 settings
-        table.grow_powers[0..6].copy_from_slice(&[100, 180, 420, 720, 1000, 5000]);
-        table.probability_thresholds[0..6].copy_from_slice(&[4300, 6800, 8200, 9100, 9700, 10000]);
-        table.probability_percentages[0..6].copy_from_slice(&[43.0, 25.0, 14.0, 9.0, 6.0, 3.0]);
-        table.expected_value = 421; // Calculated expected value
+        // Standard 8-seed settings (known values)
+        table.grow_powers[0..8].copy_from_slice(&[100, 180, 420, 720, 1000, 5000, 15000, 30000]);
+        table.probability_thresholds[0..8].copy_from_slice(&[3000, 5500, 7200, 8300, 9000, 9400, 9700, 10000]);
+        table.probability_percentages[0..8].copy_from_slice(&[30.0, 25.0, 17.0, 11.0, 7.0, 4.0, 3.0, 3.0]);
+        table.expected_value = 1590; // Calculated expected value for 8 seeds
         
-        // Set name "StandardTable1"
-        let name_bytes = b"StandardTable1";
+        // Secret seeds (9-16) remain hidden with 0 values
+        // They will be revealed later through admin updates
+        
+        // Set name "StandardTable8"
+        let name_bytes = b"StandardTable8";
         table.name[0..name_bytes.len()].copy_from_slice(name_bytes);
         
+        // Set category "standard"
+        let category_bytes = b"standard";
+        table.category[0..category_bytes.len()].copy_from_slice(category_bytes);
+        
         table
+    }
+    
+    /// Initialize with enhanced table (admin-only, reveals all secret seeds)
+    pub fn init_enhanced_table() -> Self {
+        let mut table = Self {
+            version: 1,
+            seed_count: 16,
+            revealed_seed_count: 16,    // All seeds revealed for admin table
+            grow_powers: [
+                100, 180, 420, 720, 1000, 5000, 15000, 30000,     // Original 8 types
+                60000, 120000, 250000, 500000, 1000000, 2000000, 4000000, 10000000 // Extended 8 types
+            ],
+            probability_thresholds: [
+                2500, 4500, 6200, 7500, 8400, 9000, 9350, 9550,  // First 8
+                9700, 9800, 9870, 9920, 9955, 9975, 9990, 10000  // Last 8
+            ],
+            probability_percentages: [
+                25.0, 20.0, 17.0, 13.0, 9.0, 6.0, 3.5, 2.0,      // First 8
+                1.5, 1.0, 0.7, 0.5, 0.35, 0.2, 0.15, 0.1         // Last 8
+            ],
+            expected_value: 425,
+            name: [0; 32],
+            created_at: 0,
+            updated_at: 0,
+            category: [0; 16],
+            revealed_seeds_mask: 0xFFFF, // All 16 bits set (all seeds revealed)
+            reserve: [0; 14],
+        };
+        
+        // Set name "EnhancedTable"
+        let name_bytes = b"EnhancedTable";
+        table.name[0..name_bytes.len()].copy_from_slice(name_bytes);
+        
+        // Set category "premium"
+        let category_bytes = b"premium";
+        table.category[0..category_bytes.len()].copy_from_slice(category_bytes);
+        
+        table
+    }
+    
+    /// Legacy compatibility method
+    pub fn init_table_1() -> Self {
+        Self::init_standard_table()
     }
     
     /// Get active grow powers (only up to seed_count)
@@ -161,6 +246,104 @@ impl ProbabilityTable {
     /// Get active probability percentages (only up to seed_count)
     pub fn get_active_percentages(&self) -> &[f32] {
         &self.probability_percentages[0..self.seed_count as usize]
+    }
+    
+    /// Check if a seed type is revealed (visible to users)
+    pub fn is_seed_revealed(&self, seed_index: u8) -> bool {
+        if seed_index >= 16 {
+            return false;
+        }
+        (self.revealed_seeds_mask & (1 << seed_index)) != 0
+    }
+    
+    /// Reveal a new seed type (admin only)
+    pub fn reveal_seed(&mut self, seed_index: u8, grow_power: u64, probability_percentage: f32) -> bool {
+        if seed_index >= 16 || self.is_seed_revealed(seed_index) {
+            return false;
+        }
+        
+        // Set the grow power and probability (threshold will be recalculated)
+        self.grow_powers[seed_index as usize] = grow_power;
+        self.probability_percentages[seed_index as usize] = probability_percentage;
+        
+        // Mark as revealed
+        self.revealed_seeds_mask |= 1 << seed_index;
+        self.revealed_seed_count += 1;
+        
+        true
+    }
+    
+    /// Update values for an already revealed seed type (admin only)
+    pub fn update_seed_values(&mut self, seed_index: u8, grow_power: u64, probability_percentage: f32) -> bool {
+        if seed_index >= 16 || !self.is_seed_revealed(seed_index) {
+            return false;
+        }
+        
+        // Update the grow power and probability
+        self.grow_powers[seed_index as usize] = grow_power;
+        self.probability_percentages[seed_index as usize] = probability_percentage;
+        
+        true
+    }
+    
+    /// Get grow power only if seed is revealed, otherwise return 0
+    pub fn get_revealed_grow_power(&self, seed_index: u8) -> u64 {
+        if self.is_seed_revealed(seed_index) && seed_index < 16 {
+            self.grow_powers[seed_index as usize]
+        } else {
+            0 // Hidden seed value
+        }
+    }
+    
+    /// Get probability only if seed is revealed, otherwise return 0
+    pub fn get_revealed_probability(&self, seed_index: u8) -> f32 {
+        if self.is_seed_revealed(seed_index) && seed_index < 16 {
+            self.probability_percentages[seed_index as usize]
+        } else {
+            0.0 // Hidden seed value
+        }
+    }
+    
+    /// Get active grow powers (only revealed seeds)
+    pub fn get_revealed_grow_powers(&self) -> Vec<u64> {
+        (0..self.seed_count)
+            .map(|i| self.get_revealed_grow_power(i))
+            .collect()
+    }
+    
+    /// Get active probability percentages (only revealed seeds)
+    pub fn get_revealed_percentages(&self) -> Vec<f32> {
+        (0..self.seed_count)
+            .map(|i| self.get_revealed_probability(i))
+            .collect()
+    }
+    
+    /// Validate table configuration
+    pub fn validate(&self) -> bool {
+        // Check that seed_count is within limits
+        if self.seed_count == 0 || self.seed_count > 16 {
+            return false;
+        }
+        
+        // Check that revealed_seed_count is within limits
+        if self.revealed_seed_count > self.seed_count {
+            return false;
+        }
+        
+        // Check that last threshold is 10000 (100%)
+        let last_index = (self.seed_count - 1) as usize;
+        if self.probability_thresholds[last_index] != 10000 {
+            return false;
+        }
+        
+        // Check that thresholds are in ascending order
+        for i in 1..self.seed_count as usize {
+            if self.probability_thresholds[i] <= self.probability_thresholds[i - 1] {
+                return false;
+            }
+        }
+        
+        true
     }
 }
 
@@ -192,28 +375,22 @@ impl Config {
     pub const DEFAULT_HALVING_INTERVAL: i64 = 200;
 }
 
-impl UserState {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // owner
-        8 + // total_grow_power
-        8 + // last_harvest_time
-        1 + // has_farm_space
-        1 + 32 + // referrer (Option<Pubkey>: 1 byte discriminator + 32 bytes for Some(Pubkey))
-        8 + // pending_referral_rewards
-        4 + // total_packs_purchased
-        28; // reserve (reduced from 32)
-        
-    /// Increment pack purchase count and return if farm upgrade is needed
-    pub fn increment_pack_purchases(&mut self, quantity: u32) -> bool {
-        let old_total = self.total_packs_purchased;
-        self.total_packs_purchased = self.total_packs_purchased.saturating_add(quantity);
-        
-        // Check if the pack purchase crossed an upgrade threshold
-        let old_level = FarmSpace::calculate_level_from_packs(old_total);
-        let new_level = FarmSpace::calculate_level_from_packs(self.total_packs_purchased);
-        
-        new_level > old_level
-    }
+/// User's seed inventory management
+/// Tracks all seeds owned by a user with type-based limits (16 seed types)
+#[account]
+pub struct SeedStorage {
+    /// Storage owner's public key
+    pub owner: Pubkey,
+    /// Dynamic array of seed IDs (max 2000 total)
+    pub seed_ids: Vec<u64>,
+    /// Corresponding seed types for each ID (same indexing as seed_ids)
+    pub seed_types: Vec<SeedType>,
+    /// Current seed count for quick access
+    pub total_seeds: u32,
+    /// Count of each seed type (16 types, max 100 each)
+    pub seed_type_counts: [u16; 16],
+    /// Reserved bytes for future features
+    pub reserve: [u8; 8],
 }
 
 impl FarmSpace {
@@ -224,9 +401,8 @@ impl FarmSpace {
         1 + // seed_count
         8 + // total_grow_power
         32; // reserve
-    
         
-    /// Get capacity for a given level using constants
+    /// Get capacity for a given level
     pub fn get_capacity_for_level(level: u8) -> u8 {
         use crate::constants::FARM_CAPACITIES;
         if level == 0 || level > FARM_CAPACITIES.len() as u8 {
@@ -234,103 +410,546 @@ impl FarmSpace {
         }
         FARM_CAPACITIES[(level - 1) as usize]
     }
-    
-    /// Get legacy upgrade cost for next level (deprecated - now uses auto-upgrade)
-    pub fn get_legacy_upgrade_cost(current_level: u8) -> Option<u64> {
-        use crate::constants::LEGACY_UPGRADE_COSTS;
-        if current_level == 0 || current_level > LEGACY_UPGRADE_COSTS.len() as u8 {
-            return None;
-        }
-        Some(LEGACY_UPGRADE_COSTS[(current_level - 1) as usize])
-    }
-    
-    /// Calculate required farm level based on cumulative pack purchases
-    pub fn calculate_level_from_packs(total_packs: u32) -> u8 {
-        use crate::constants::FARM_UPGRADE_THRESHOLDS;
-        
-        for (i, &threshold) in FARM_UPGRADE_THRESHOLDS.iter().enumerate().rev() {
-            if total_packs >= threshold {
-                return (i + 1) as u8;
-            }
-        }
-        1 // Default to level 1
-    }
-    
-    /// Update farm space level and capacity based on pack purchases
-    pub fn auto_upgrade(&mut self, total_packs: u32) -> bool {
-        let new_level = Self::calculate_level_from_packs(total_packs);
-        if new_level > self.level {
-            self.level = new_level;
-            self.capacity = Self::get_capacity_for_level(new_level);
-            return true; // Upgrade occurred
-        }
-        false // No upgrade needed
-    }
-    
 }
 
-/// Seed types with dynamic grow power and probabilities (supports up to 16 types)
-#[derive(Clone, Copy, PartialEq, Eq, AnchorSerialize, AnchorDeserialize, Debug)]
-pub enum SeedType {
-    Seed1,      // Grow Power: Dynamic (from probability table)
-    Seed2,      // Grow Power: Dynamic (from probability table)
-    Seed3,      // Grow Power: Dynamic (from probability table)
-    Seed4,      // Grow Power: Dynamic (from probability table)
-    Seed5,      // Grow Power: Dynamic (from probability table)
-    Seed6,      // Grow Power: Dynamic (from probability table)
-    Seed7,      // Grow Power: Dynamic (from probability table)
-    Seed8,      // Grow Power: Dynamic (from probability table)
-    Seed9,      // Grow Power: Dynamic (from probability table)
-    Seed10,     // Grow Power: Dynamic (from probability table)
-    Seed11,     // Grow Power: Dynamic (from probability table)
-    Seed12,     // Grow Power: Dynamic (from probability table)
-    Seed13,     // Grow Power: Dynamic (from probability table)
-    Seed14,     // Grow Power: Dynamic (from probability table)
-    Seed15,     // Grow Power: Dynamic (from probability table)
-    Seed16,     // Grow Power: Dynamic (from probability table)
+impl SeedStorage {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // owner
+        4 + (8 * 2_000) + // seed_ids (Vec<u64> with max 2,000 seeds)
+        4 + (1 * 2_000) + // seed_types (Vec<SeedType> with max 2,000 entries)
+        4 + // total_seeds (u32 for 2,000+ seeds)
+        (2 * 16) + // seed_type_counts (16 x u16)
+        8; // reserve
+        // Total: 18,094 bytes (~18KB) - Still affordable, rent ~0.13 SOL
+        
+    /// Maximum total seeds per user (2000)
+    pub const MAX_TOTAL_SEEDS: usize = 2_000;
+    
+    /// Maximum seeds per type (100 each)
+    pub const MAX_SEEDS_PER_TYPE: u16 = 100;
+    
+    /// Check if storage has capacity for more seeds (total limit)
+    pub fn can_add_seed(&self) -> bool {
+        self.seed_ids.len() < Self::MAX_TOTAL_SEEDS
+    }
+    
+    /// Check if specific seed type has capacity
+    pub fn can_add_seed_type(&self, seed_type: &SeedType) -> bool {
+        let type_index = *seed_type as usize;
+        if type_index >= 16 {
+            return false;
+        }
+        self.seed_type_counts[type_index] < Self::MAX_SEEDS_PER_TYPE
+    }
+    
+    /// Check if we can add a seed (both total and type limits)
+    pub fn can_add_seed_with_type(&self, seed_type: &SeedType) -> bool {
+        self.can_add_seed() && self.can_add_seed_type(seed_type)
+    }
+    
+    /// Add a new seed ID to storage with type tracking
+    pub fn add_seed(&mut self, seed_id: u64, seed_type: &SeedType) -> Result<()> {
+        require!(self.can_add_seed(), crate::error::GameError::StorageFull);
+        require!(self.can_add_seed_type(seed_type), crate::error::GameError::SeedTypeLimitReached);
+        
+        // Add seed ID and corresponding type (maintaining same indexing)
+        self.seed_ids.push(seed_id);
+        self.seed_types.push(*seed_type);
+        self.total_seeds = self.seed_ids.len() as u32;
+        
+        // Update type count
+        let type_index = *seed_type as usize;
+        if type_index < 16 {
+            self.seed_type_counts[type_index] += 1;
+        }
+        
+        Ok(())
+    }
+    
+    /// Remove seed ID from storage with type tracking
+    pub fn remove_seed(&mut self, seed_id: u64, seed_type: &SeedType) -> bool {
+        if let Some(pos) = self.seed_ids.iter().position(|&x| x == seed_id) {
+            // Remove both the seed ID and its corresponding type
+            self.seed_ids.remove(pos);
+            self.seed_types.remove(pos);
+            self.total_seeds = self.seed_ids.len() as u32;
+            
+            // Update type count
+            let type_index = *seed_type as usize;
+            if type_index < 16 && self.seed_type_counts[type_index] > 0 {
+                self.seed_type_counts[type_index] -= 1;
+            }
+            
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Get count of specific seed type
+    pub fn get_seed_type_count(&self, seed_type: &SeedType) -> u16 {
+        let type_index = *seed_type as usize;
+        if type_index < 16 {
+            self.seed_type_counts[type_index]
+        } else {
+            0
+        }
+    }
+    
+    /// Get remaining capacity for specific seed type
+    pub fn get_remaining_capacity(&self, seed_type: &SeedType) -> u16 {
+        let type_index = *seed_type as usize;
+        if type_index < 16 {
+            Self::MAX_SEEDS_PER_TYPE.saturating_sub(self.seed_type_counts[type_index])
+        } else {
+            0
+        }
+    }
+    
+    /// Initialize seed type counts and ensure vectors are empty
+    pub fn initialize_type_counts(&mut self) {
+        self.seed_type_counts = [0; 16];
+        self.seed_ids.clear();
+        self.seed_types.clear();
+        self.total_seeds = 0;
+    }
+    
+    /// Auto-discard excess seeds if over limit
+    /// Strategy: Remove oldest seeds first (FIFO - First In, First Out)
+    pub fn auto_discard_excess(&mut self, seed_type: &SeedType) -> Result<()> {
+        let type_index = *seed_type as usize;
+        if type_index >= 16 {
+            return Ok(()); // Invalid seed type, skip
+        }
+        
+        // Check if we need to discard due to type limit
+        if self.seed_type_counts[type_index] >= Self::MAX_SEEDS_PER_TYPE {
+            // Find and remove the oldest seed of this specific type
+            if let Some(oldest_seed_id) = self.find_oldest_seed_of_type(seed_type) {
+                self.remove_seed(oldest_seed_id, seed_type);
+                msg!("Auto-discarded oldest seed ID {} of type {:?} due to type limit", 
+                     oldest_seed_id, seed_type);
+            }
+        }
+        
+        // Check if we need to discard due to total limit
+        while self.seed_ids.len() >= Self::MAX_TOTAL_SEEDS {
+            if !self.seed_ids.is_empty() && !self.seed_types.is_empty() {
+                // Get the oldest seed (first in vector) and its type
+                let oldest_seed_id = self.seed_ids[0];
+                let oldest_seed_type = self.seed_types[0];
+                
+                // Remove using proper method to maintain consistency
+                self.remove_seed(oldest_seed_id, &oldest_seed_type);
+                
+                msg!("Auto-discarded oldest seed ID {} of type {:?} due to total storage limit", 
+                     oldest_seed_id, oldest_seed_type);
+            } else {
+                break; // No more seeds to remove
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Find the oldest seed ID of a specific type
+    /// Uses parallel indexing of seed_ids and seed_types to find the first occurrence
+    /// FIFO: First seed of the specified type in the vector is the oldest
+    fn find_oldest_seed_of_type(&self, target_type: &SeedType) -> Option<u64> {
+        let target_index = *target_type as usize;
+        if target_index >= 16 || self.seed_type_counts[target_index] == 0 {
+            return None;
+        }
+        
+        // Find the first (oldest) seed of the specified type
+        // Since we maintain parallel vectors, we can iterate through both simultaneously
+        for (i, &seed_type) in self.seed_types.iter().enumerate() {
+            if seed_type == *target_type {
+                // Found the oldest seed of this type
+                return Some(self.seed_ids[i]);
+            }
+        }
+        
+        None // No seeds of this type found (shouldn't happen if count > 0)
+    }
+}
+
+impl UserState {
+    /// Auto-upgrade farm if eligible based on pack purchases
+    /// This method checks if the user is eligible for a farm upgrade based on their total pack purchases
+    /// Note: This method only determines eligibility - the actual upgrade should be done via FarmSpace::auto_upgrade
+    pub fn auto_upgrade_if_eligible(&mut self, total_packs_purchased: u32) -> Result<bool> {
+        use crate::constants::FARM_UPGRADE_THRESHOLDS;
+        
+        // Update our internal pack count
+        self.total_packs_purchased = total_packs_purchased;
+        
+        // Check if user has a farm space
+        if !self.has_farm_space {
+            return Ok(false); // Cannot upgrade without a farm space
+        }
+        
+        // Check if we've crossed any upgrade threshold
+        for &threshold in FARM_UPGRADE_THRESHOLDS.iter().skip(1) { // Skip level 1 (threshold 0)
+            if total_packs_purchased >= threshold {
+                // User is eligible for upgrade to this level
+                // The actual upgrade logic should be handled by FarmSpace::auto_upgrade
+                return Ok(true);
+            }
+        }
+        
+        Ok(false)
+    }
+    
+    /// Increment pack purchases and return if upgrade is needed
+    pub fn increment_pack_purchases(&mut self, quantity: u32) -> bool {
+        let old_total = self.total_packs_purchased;
+        self.total_packs_purchased += quantity;
+        
+        // Check if we crossed any upgrade threshold
+        use crate::constants::FARM_UPGRADE_THRESHOLDS;
+        
+        // Find the highest threshold we crossed
+        for &threshold in FARM_UPGRADE_THRESHOLDS.iter().rev() {
+            if old_total < threshold && self.total_packs_purchased >= threshold {
+                return true;
+            }
+        }
+        
+        false
+    }
+}
+
+impl FarmSpace {
+    /// Auto-upgrade farm if eligible based on pack purchases
+    pub fn auto_upgrade(&mut self, total_packs_purchased: u32) -> Result<bool> {
+        use crate::constants::FARM_UPGRADE_THRESHOLDS;
+        
+        // Check if already at max level
+        if self.level >= 5 {
+            return Ok(false);
+        }
+        
+        // Get the next level's threshold
+        let next_threshold = FARM_UPGRADE_THRESHOLDS[self.level as usize];
+        
+        // Check if we've reached the threshold for upgrade
+        if total_packs_purchased >= next_threshold {
+            // Upgrade to next level
+            self.level += 1;
+            self.capacity = Self::get_capacity_for_level(self.level);
+            
+            msg!("Farm auto-upgraded to level {} (capacity: {}) after {} total packs purchased", 
+                 self.level, self.capacity, total_packs_purchased);
+            
+            return Ok(true);
+        }
+        
+        Ok(false)
+    }
+}
+
+/// Global statistics tracking for the entire game ecosystem
+#[account]
+pub struct GlobalStats {
+    /// Total grow power across all farms
+    pub total_grow_power: u64,
+    /// Total number of farm spaces created
+    pub total_farm_spaces: u64,
+    /// Total WEED tokens minted
+    pub total_supply: u64,
+    /// Current effective rewards per second (after halving)
+    pub current_rewards_per_second: u64,
+    /// Last time statistics were updated
+    pub last_update_time: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+impl GlobalStats {
+    pub const LEN: usize = 8 + // discriminator
+        8 + // total_grow_power
+        8 + // total_farm_spaces
+        8 + // total_supply
+        8 + // current_rewards_per_second
+        8 + // last_update_time
+        32; // reserve
+        
+    /// Initial total supply (placeholder value)
+    pub const INITIAL_TOTAL_SUPPLY: u64 = 0;
+}
+
+/// Fee pool for collecting and managing trading fees
+#[account]
+pub struct FeePool {
+    /// Accumulated fees in lamports
+    pub accumulated_fees: u64,
+    /// Treasury address for fee withdrawal
+    pub treasury_address: Pubkey,
+    /// Last time fees were collected
+    pub last_collection_time: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 48],
+}
+
+impl FeePool {
+    pub const LEN: usize = 8 + // discriminator
+        8 + // accumulated_fees
+        32 + // treasury_address
+        8 + // last_collection_time
+        48; // reserve
+}
+
+/// Individual seed account for planted seeds
+#[account]
+pub struct Seed {
+    /// Seed unique ID
+    pub seed_id: u64,
+    /// Seed type (determines grow power)
+    pub seed_type: SeedType,
+    /// Owner of this seed
+    pub owner: Pubkey,
+    /// Grow power value for this seed
+    pub grow_power: u64,
+    /// When this seed was planted
+    pub planted_at: i64,
+    /// Whether this seed is currently planted in a farm
+    pub is_planted: bool,
+    /// Which farm space this seed is planted in (if any)
+    pub planted_farm_space: Option<Pubkey>,
+    /// When this seed was created
+    pub created_at: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 16],
+}
+
+impl Seed {
+    pub const LEN: usize = 8 + // discriminator
+        8 + // seed_id
+        1 + // seed_type (enum as u8)
+        32 + // owner
+        8 + // grow_power
+        8 + // planted_at
+        1 + // is_planted
+        (1 + 32) + // planted_farm_space (Option<Pubkey>)
+        8 + // created_at
+        16; // reserve
+}
+
+/// Invite code account for referral system
+#[account]
+pub struct InviteCode {
+    /// 8-byte invite code
+    pub code: [u8; 8],
+    /// Address of the inviter who created this code
+    pub inviter: Pubkey,
+    /// Number of times this code has been used (alias for uses)
+    pub uses: u32,
+    /// Maximum number of uses allowed
+    pub max_uses: u32,
+    /// When this code was created
+    pub created_at: i64,
+    /// Whether this code is still active
+    pub is_active: bool,
+    /// Whether this code was created as operator
+    pub created_as_operator: bool,
+    /// Salt for hash generation
+    pub salt: [u8; 16],
+    /// Hash of the code for verification
+    pub code_hash: [u8; 32],
+    /// Invite limit for this code (alias for max_uses)
+    pub invite_limit: u32,
+    /// Reserved for future expansion
+    pub reserve: [u8; 14],
+}
+
+impl InviteCode {
+    pub const LEN: usize = 8 + // discriminator
+        8 + // code
+        32 + // inviter
+        4 + // uses
+        4 + // max_uses
+        8 + // created_at
+        1 + // is_active
+        1 + // created_as_operator
+        16 + // salt
+        32 + // code_hash
+        4 + // invite_limit
+        14; // reserve
+        
+}
+
+/// Farm level configuration for dynamic level management
+#[account]
+pub struct FarmLevelConfig {
+    /// Maximum level available
+    pub max_level: u8,
+    /// Capacity for each level (array of 20 levels max)
+    pub capacities: [u8; 20],
+    /// Pack purchase thresholds for each level
+    pub upgrade_thresholds: [u32; 20],
+    /// Level names (optional, 32 bytes each)
+    pub level_names: [[u8; 32]; 20],
+    /// When this config was created
+    pub created_at: i64,
+    /// Last update timestamp
+    pub updated_at: i64,
+    /// Reserved for future expansion
+    pub reserve: [u8; 32],
+}
+
+impl FarmLevelConfig {
+    pub const LEN: usize = 8 + // discriminator
+        1 + // max_level
+        20 + // capacities (20 * 1)
+        80 + // upgrade_thresholds (20 * 4)
+        640 + // level_names (20 * 32)
+        8 + // created_at
+        8 + // updated_at
+        32; // reserve
+        
+    pub const DEFAULT_SPACE: usize = Self::LEN;
+}
+
+/// Seed pack account for mystery box functionality
+#[account]
+pub struct SeedPack {
+    /// Pack unique ID
+    pub pack_id: u64,
+    /// Owner of this pack (replacing purchaser field)
+    pub owner: Pubkey,
+    /// Number of seeds in this pack
+    pub quantity: u8,
+    /// Whether this pack has been opened
+    pub is_opened: bool,
+    /// Probability table version used for this pack
+    pub table_version: u32,
+    /// Switchboard VRF request for randomness
+    pub vrf_request: Option<Pubkey>,
+    /// Random seed for pack opening
+    pub random_seed: Option<u64>,
+    /// When this pack was purchased
+    pub purchased_at: i64,
+    /// When this pack was opened (if opened)
+    pub opened_at: Option<i64>,
+    /// Cost paid for this pack in WEED tokens
+    pub cost_paid: u64,
+    /// VRF fee paid for randomness
+    pub vrf_fee_paid: u64,
+    /// VRF sequence number (legacy field)
+    pub vrf_sequence: Option<u64>,
+    /// User entropy seed for additional randomness
+    pub user_entropy_seed: Option<u64>,
+    /// Final random value generated
+    pub final_random_value: Option<u64>,
+    /// VRF account used for randomness
+    pub vrf_account: Option<Pubkey>,
+    /// Reserved for future expansion
+    pub reserve: [u8; 8],
+}
+
+impl SeedPack {
+    pub const LEN: usize = 8 + // discriminator
+        8 + // pack_id
+        32 + // owner
+        1 + // quantity
+        1 + // is_opened
+        4 + // table_version
+        (1 + 32) + // vrf_request (Option<Pubkey>)
+        (1 + 8) + // random_seed (Option<u64>)
+        8 + // purchased_at
+        (1 + 8) + // opened_at (Option<i64>)
+        8 + // cost_paid
+        8 + // vrf_fee_paid
+        (1 + 8) + // vrf_sequence (Option<u64>)
+        (1 + 8) + // user_entropy_seed (Option<u64>)
+        (1 + 8) + // final_random_value (Option<u64>)
+        (1 + 32) + // vrf_account (Option<Pubkey>)
+        8; // reserve
+}
+
+impl UserState {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // owner
+        8 + // total_grow_power
+        8 + // last_harvest_time
+        1 + // has_farm_space
+        (1 + 32) + // referrer (Option<Pubkey>)
+        8 + // pending_referral_rewards
+        4 + // total_packs_purchased
+        28; // reserve
 }
 
 impl SeedType {
-    /// Default grow power values (fallback when probability table not available)
-    /// Note: In production, grow powers should come from ProbabilityTable
-    const DEFAULT_GROW_POWERS: [u64; 16] = [
-        100, 180, 420, 720, 1000, 5000, 15000, 30000,     // Original 8 types
-        60000, 120000, 250000, 500000, 1000000, 2000000, 4000000, 10000000 // Extended 8 types
+    /// Default grow power values for known seed types (first 8)
+    /// Secret seed values are not exposed here
+    const KNOWN_GROW_POWERS: [u64; 8] = [
+        100, 180, 420, 720, 1000, 5000, 15000, 30000
     ];
     
-    /// Get grow power from probability table (preferred method)
-    /// Falls back to default values if table not available
+    /// Get grow power (alias for get_default_grow_power for backward compatibility)
+    pub fn get_grow_power(&self) -> u64 {
+        self.get_default_grow_power()
+    }
+    
+    /// Get grow power from probability table (respects reveal status)
     pub fn get_grow_power_from_table(&self, table: &ProbabilityTable) -> u64 {
         let index = *self as usize;
-        if index < table.seed_count as usize {
-            table.grow_powers[index]
+        if index < table.seed_count as usize && index < 16 {
+            // Only return actual value if seed is revealed
+            if table.is_seed_revealed(index as u8) {
+                table.grow_powers[index]
+            } else {
+                0 // Hidden seed - return 0 to external queries
+            }
         } else {
             self.get_default_grow_power()
         }
     }
     
-    /// Get default grow power (fallback method)
+    /// Get grow power from probability table (internal use - bypasses reveal check)
+    pub fn get_actual_grow_power_from_table(&self, table: &ProbabilityTable) -> u64 {
+        let index = *self as usize;
+        if index < table.seed_count as usize && index < 16 {
+            table.grow_powers[index] // Return actual value regardless of reveal status
+        } else {
+            self.get_default_grow_power()
+        }
+    }
+    
+    /// Get default grow power (only for known seed types)
     pub fn get_default_grow_power(&self) -> u64 {
-        Self::DEFAULT_GROW_POWERS[*self as usize]
+        let index = *self as usize;
+        if index < 8 {
+            Self::KNOWN_GROW_POWERS[index]
+        } else {
+            0 // Secret seeds have no default value
+        }
+    }
+    
+    /// Check if this seed type is initially known (not secret)
+    pub fn is_initially_known(&self) -> bool {
+        (*self as u8) < 8
     }
     
     /// Convert random value to seed type using probability table
     pub fn from_random_with_table(random: u64, table: &ProbabilityTable) -> Self {
         let value = (random % 10000) as u16;
         
-        for i in 0..table.seed_count as usize {
+        for i in 0..(table.seed_count as usize).min(16) {
             if value < table.probability_thresholds[i] {
                 return Self::from_index(i as u8).unwrap_or(SeedType::Seed1);
             }
         }
         
         // Fallback to last seed type in table
-        Self::from_index((table.seed_count - 1) as u8).unwrap_or(SeedType::Seed1)
+        let last_index = ((table.seed_count - 1) as usize).min(15);
+        Self::from_index(last_index as u8).unwrap_or(SeedType::Seed1)
     }
     
-    /// Legacy method for backward compatibility (uses default table)
+    /// Legacy method for backward compatibility
     pub fn from_random(random: u64) -> Self {
-        let table = ProbabilityTable::init_table_1();
+        let table = ProbabilityTable::init_standard_table();
         Self::from_random_with_table(random, &table)
     }
     
@@ -344,10 +963,10 @@ impl SeedType {
         ]
     }
     
-    /// Get probability from table (preferred method)
+    /// Get probability from table
     pub fn get_probability_from_table(&self, table: &ProbabilityTable) -> f32 {
         let index = *self as usize;
-        if index < table.seed_count as usize {
+        if index < table.seed_count as usize && index < 16 {
             table.probability_percentages[index]
         } else {
             0.0
@@ -359,7 +978,7 @@ impl SeedType {
         value < 16
     }
     
-    /// Create SeedType from index (for dynamic probability tables, supports 16 types)
+    /// Create SeedType from index (supports 16 types)
     pub fn from_index(index: u8) -> Result<SeedType> {
         match index {
             0 => Ok(SeedType::Seed1),
@@ -379,439 +998,6 @@ impl SeedType {
             14 => Ok(SeedType::Seed15),
             15 => Ok(SeedType::Seed16),
             _ => Err(crate::error::GameError::InvalidConfig.into()),
-        }
-    }
-}
-
-/// Seed account (stored in user's storage)
-#[account]
-pub struct Seed {
-    /// Seed owner
-    pub owner: Pubkey,
-    /// Seed type (determines grow power)
-    pub seed_type: SeedType,
-    /// Grow power of this seed
-    pub grow_power: u64,
-    /// Whether this seed is currently planted in farm space
-    pub is_planted: bool,
-    /// Farm space where this seed is planted (if any)
-    pub planted_farm_space: Option<Pubkey>,
-    /// Creation timestamp
-    pub created_at: i64,
-    /// Unique seed ID
-    pub seed_id: u64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 32],
-}
-
-/// Seed Pack purchase tracker
-#[account]
-pub struct SeedPack {
-    /// Purchaser
-    pub purchaser: Pubkey,
-    /// Purchase timestamp
-    pub purchased_at: i64,
-    /// Pack cost paid in WEED tokens
-    pub cost_paid: u64,
-    /// VRF fee paid in SOL lamports (0 for Solana native)
-    pub vrf_fee_paid: u64,
-    /// Whether pack has been opened
-    pub is_opened: bool,
-    /// VRF sequence number (for tracking the VRF request)
-    pub vrf_sequence: u64,
-    /// User-provided entropy seed (for additional randomness)
-    pub user_entropy_seed: u64,
-    /// Final random value (set after opening)
-    pub final_random_value: u64,
-    /// Pack ID
-    pub pack_id: u64,
-    /// Switchboard VRF account
-    pub vrf_account: Pubkey,
-    /// Reserved for future expansion
-    pub reserve: [u8; 8],
-}
-
-impl Seed {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // owner
-        1 + // seed_type (enum)
-        8 + // grow_power
-        1 + // is_planted
-        1 + 32 + // planted_farm_space (Option<Pubkey>)
-        8 + // created_at
-        8 + // seed_id
-        32; // reserve
-}
-
-impl SeedPack {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // purchaser
-        8 + // purchased_at
-        8 + // cost_paid
-        8 + // vrf_fee_paid
-        1 + // is_opened
-        8 + // vrf_sequence
-        8 + // user_entropy_seed
-        8 + // final_random_value
-        8 + // pack_id
-        32 + // vrf_account (Pubkey)
-        8; // reserve
-}
-
-/// Invite code management PDA (Hash-based for privacy)
-#[account]
-pub struct InviteCode {
-    /// Invite code creator (user who can invite others)
-    pub inviter: Pubkey,
-    /// Current number of people invited
-    pub invites_used: u16,
-    /// Maximum invite limit for this user
-    pub invite_limit: u16,
-    /// Hash of the invite code (SHA256(code + salt))
-    pub code_hash: [u8; 32],
-    /// Random salt for hash security
-    pub salt: [u8; 16],
-    /// Index in the inviter's code list
-    pub code_index: u16,
-    /// Creation timestamp
-    pub created_at: i64,
-    /// Whether this code is active
-    pub is_active: bool,
-    /// Whether this code was created by an operator (for privilege validation)
-    pub created_as_operator: bool,
-    /// Reserved for future expansion
-    pub reserve: [u8; 14],
-}
-
-impl InviteCode {
-    pub const LEN: usize = 8 + 32 + 2 + 2 + 32 + 16 + 2 + 8 + 1 + 1 + 14;
-}
-
-/// Single-use secret invite code PDA (Operator-only, hash-based)
-#[account]
-pub struct SingleUseSecretInvite {
-    /// Creator (operator only)
-    pub creator: Pubkey,
-    /// Hash of the invite code (SHA256(code + salt))
-    pub code_hash: [u8; 32],
-    /// Random salt for hash security
-    pub salt: [u8; 16],
-    /// Whether this code has been used
-    pub is_used: bool,
-    /// User who used this code
-    pub used_by: Option<Pubkey>,
-    /// Creation timestamp
-    pub created_at: i64,
-    /// Usage timestamp
-    pub used_at: Option<i64>,
-    /// Campaign ID for tracking
-    pub campaign_id: [u8; 8],
-    /// Reserved for future expansion
-    pub reserve: [u8; 16],
-}
-
-impl SingleUseSecretInvite {
-    pub const LEN: usize = 8 + 32 + 32 + 16 + 1 + 1 + 32 + 8 + 1 + 8 + 8 + 16;
-}
-
-/// Inviter code registry PDA (manages multiple codes per inviter)
-#[account]
-pub struct InviterCodeRegistry {
-    /// Inviter pubkey
-    pub inviter: Pubkey,
-    /// Total number of codes created by this inviter
-    pub total_codes_created: u16,
-    /// Number of currently active codes
-    pub active_codes_count: u16,
-    /// Total invites used across all codes
-    pub total_invites_used: u32,
-    /// Last code creation timestamp
-    pub last_code_created_at: i64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 32],
-}
-
-impl InviterCodeRegistry {
-    pub const LEN: usize = 8 + 32 + 2 + 2 + 4 + 8 + 32;
-}
-
-/// Global statistics PDA
-#[account]
-pub struct GlobalStats {
-    /// Total grow power across all users
-    pub total_grow_power: u64,
-    /// Total number of active farm spaces
-    pub total_farm_spaces: u64,
-    /// Total $WEED supply (240 million)
-    pub total_supply: u64,
-    /// Current rewards per second (decreases with halving)
-    pub current_rewards_per_second: u64,
-    /// Last update timestamp
-    pub last_update_time: i64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 32],
-}
-
-/// Fee collection pool PDA
-#[account]
-pub struct FeePool {
-    /// Accumulated trading fees in $WEED
-    pub accumulated_fees: u64,
-    /// Treasury multisig/address for SOL conversion
-    pub treasury_address: Pubkey,
-    /// Last fee collection timestamp
-    pub last_collection_time: i64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 48],
-}
-
-/// User's seed inventory management
-/// Tracks all seeds owned by a user with type-based limits (supports 16 seed types)
-#[account]
-pub struct SeedStorage {
-    /// Storage owner's public key
-    pub owner: Pubkey,
-    /// Dynamic array of seed IDs (max 2000 total)
-    pub seed_ids: Vec<u64>,
-    /// Current seed count for quick access
-    pub total_seeds: u32,
-    /// Count of each seed type (16 types, max 100 each)
-    pub seed_type_counts: [u16; 16],
-    /// Reserved bytes for future features
-    pub reserve: [u8; 2], // Reduced due to larger seed_type_counts array
-}
-
-impl SeedStorage {
-    /// Maximum total seeds per user (2000)
-    /// Supports up to 400 mystery packs worth of seeds
-    /// Rent cost: ~0.12 SOL for the entire account
-    pub const MAX_TOTAL_SEEDS: usize = 2_000;
-    
-    /// Maximum seeds per type (100 each)
-    /// Prevents hoarding of specific seed types
-    pub const MAX_SEEDS_PER_TYPE: u16 = 100;
-    
-    /// Check if storage has capacity for more seeds (total limit)
-    pub fn can_add_seed(&self) -> bool {
-        self.seed_ids.len() < Self::MAX_TOTAL_SEEDS
-    }
-    
-    /// Check if specific seed type has capacity
-    pub fn can_add_seed_type(&self, seed_type: &SeedType) -> bool {
-        let type_index = *seed_type as usize;
-        self.seed_type_counts[type_index] < Self::MAX_SEEDS_PER_TYPE
-    }
-    
-    /// Check if we can add a seed (both total and type limits)
-    pub fn can_add_seed_with_type(&self, seed_type: &SeedType) -> bool {
-        self.can_add_seed() && self.can_add_seed_type(seed_type)
-    }
-    
-    /// Add a new seed ID to storage with type tracking
-    pub fn add_seed(&mut self, seed_id: u64, seed_type: &SeedType) -> Result<()> {
-        require!(self.can_add_seed(), crate::error::GameError::StorageFull);
-        require!(self.can_add_seed_type(seed_type), crate::error::GameError::SeedTypeLimitReached);
-        
-        self.seed_ids.push(seed_id);
-        self.total_seeds = self.seed_ids.len() as u32;
-        
-        // Update type count
-        let type_index = *seed_type as usize;
-        self.seed_type_counts[type_index] += 1;
-        
-        Ok(())
-    }
-    
-    /// Remove seed ID from storage with type tracking
-    pub fn remove_seed(&mut self, seed_id: u64, seed_type: &SeedType) -> bool {
-        if let Some(pos) = self.seed_ids.iter().position(|&x| x == seed_id) {
-            self.seed_ids.remove(pos);
-            self.total_seeds = self.seed_ids.len() as u32;
-            
-            // Update type count
-            let type_index = *seed_type as usize;
-            if self.seed_type_counts[type_index] > 0 {
-                self.seed_type_counts[type_index] -= 1;
-            }
-            
-            true
-        } else {
-            false
-        }
-    }
-    
-    /// Auto-discard lowest value seeds when type limit is reached
-    /// Returns the number of seeds discarded
-    pub fn auto_discard_excess(&mut self, new_seed_type: &SeedType) -> Result<u16> {
-        let type_index = *new_seed_type as usize;
-        
-        // If we're not at the limit, no need to discard
-        if self.seed_type_counts[type_index] < Self::MAX_SEEDS_PER_TYPE {
-            return Ok(0);
-        }
-        
-        // Find the lowest value seed of this type to discard
-        // For now, we'll discard one seed to make room
-        // In a full implementation, you'd want to track individual seed values
-        if self.seed_type_counts[type_index] > 0 {
-            self.seed_type_counts[type_index] -= 1;
-            // Note: In practice, you'd also remove the specific seed_id
-            // and properly handle the seed account closure
-            return Ok(1);
-        }
-        
-        Ok(0)
-    }
-    
-    /// Get count of specific seed type
-    pub fn get_seed_type_count(&self, seed_type: &SeedType) -> u16 {
-        let type_index = *seed_type as usize;
-        self.seed_type_counts[type_index]
-    }
-    
-    /// Get remaining capacity for specific seed type
-    pub fn get_remaining_capacity(&self, seed_type: &SeedType) -> u16 {
-        let type_index = *seed_type as usize;
-        Self::MAX_SEEDS_PER_TYPE.saturating_sub(self.seed_type_counts[type_index])
-    }
-    
-    /// Initialize seed type counts (for existing accounts)
-    pub fn initialize_type_counts(&mut self) {
-        self.seed_type_counts = [0; 16];
-    }
-}
-
-/// Individual reward accumulation PDA per user
-#[account]
-pub struct RewardAccount {
-    /// User who can claim these rewards
-    pub user: Pubkey,
-    /// Accumulated claimable rewards
-    pub claimable_amount: u64,
-    /// Last harvest timestamp
-    pub last_harvest_time: i64,
-    /// Referral rewards (level 1: 10%, level 2: 5%)
-    pub referral_rewards_l1: u64,
-    pub referral_rewards_l2: u64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 32],
-}
-
-
-impl GlobalStats {
-    pub const LEN: usize = 8 + // discriminator
-        8 + // total_grow_power
-        8 + // total_farm_spaces
-        8 + // total_supply
-        8 + // current_rewards_per_second
-        8 + // last_update_time
-        32; // reserve
-        
-    /// Initial total supply (240 million WEED)
-    pub const INITIAL_TOTAL_SUPPLY: u64 = 240_000_000 * 1_000_000; // 240M WEED with 6 decimals
-}
-
-impl FeePool {
-    pub const LEN: usize = 8 + // discriminator
-        8 + // accumulated_fees
-        32 + // treasury_address
-        8 + // last_collection_time
-        48; // reserve
-}
-
-impl SeedStorage {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // owner
-        4 + (8 * 2_000) + // seed_ids (Vec<u64> with max 2,000 seeds)
-        4 + // total_seeds (u32 for 2,000+ seeds)
-        (2 * 16) + // seed_type_counts (16 x u16)
-        2; // reserve (reduced due to larger seed_type_counts)
-        // Total: 16,090 bytes (~16KB) - Affordable, rent ~0.12 SOL
-}
-
-impl RewardAccount {
-    pub const LEN: usize = 8 + // discriminator
-        32 + // user
-        8 + // claimable_amount
-        8 + // last_harvest_time
-        8 + // referral_rewards_l1
-        8 + // referral_rewards_l2
-        32; // reserve
-}
-
-/// Dynamic farm level configuration
-/// Allows flexible addition of new farm levels
-#[account]
-pub struct FarmLevelConfig {
-    /// Maximum supported level (1-20)
-    pub max_level: u8,
-    /// Capacity for each level (dynamic array)
-    pub capacities: Vec<u8>,
-    /// Pack purchase thresholds for each level (dynamic array)
-    pub upgrade_thresholds: Vec<u32>,
-    /// Optional names for each level (dynamic array)
-    pub level_names: Vec<String>,
-    /// Configuration creation timestamp
-    pub created_at: i64,
-    /// Last update timestamp
-    pub updated_at: i64,
-    /// Reserved for future expansion
-    pub reserve: [u8; 32],
-}
-
-impl FarmLevelConfig {
-    // Variable size account - calculate based on actual content
-    pub const BASE_LEN: usize = 8 + // discriminator
-        1 + // max_level
-        4 + // capacities vec header
-        4 + // upgrade_thresholds vec header  
-        4 + // level_names vec header
-        8 + // created_at
-        8 + // updated_at
-        32; // reserve
-        
-    /// Calculate space needed for a specific configuration
-    pub fn calculate_space(max_level: u8, level_names: &[String]) -> usize {
-        let capacities_space = max_level as usize; // Vec<u8>
-        let thresholds_space = max_level as usize * 4; // Vec<u32>
-        let names_space = level_names.iter().map(|s| 4 + s.len()).sum::<usize>(); // Vec<String>
-        
-        Self::BASE_LEN + capacities_space + thresholds_space + names_space
-    }
-    
-    /// Get default 5-level configuration space
-    pub const DEFAULT_SPACE: usize = Self::BASE_LEN + 
-        5 + // 5 levels (u8)
-        20 + // 5 thresholds (u32)
-        (4 + 12) * 5; // 5 names (~12 chars each with length prefix)
-}
-
-impl FarmSpace {
-    /// Get capacity for level using dynamic configuration
-    pub fn get_capacity_for_level_with_config(level: u8, config: &FarmLevelConfig) -> Result<u8> {
-        require!(level >= 1 && level <= config.max_level, GameError::InvalidFarmLevel);
-        Ok(config.capacities[(level - 1) as usize])
-    }
-    
-    /// Calculate level from pack purchases using dynamic configuration
-    pub fn calculate_level_from_packs_with_config(total_packs: u32, config: &FarmLevelConfig) -> u8 {
-        for (i, &threshold) in config.upgrade_thresholds.iter().enumerate().rev() {
-            if total_packs >= threshold {
-                return (i + 1) as u8;
-            }
-        }
-        1
-    }
-    
-    /// Auto-upgrade using dynamic configuration
-    pub fn auto_upgrade_with_config(&mut self, total_packs: u32, config: &FarmLevelConfig) -> Result<bool> {
-        let new_level = Self::calculate_level_from_packs_with_config(total_packs, config);
-        if new_level > self.level && new_level <= config.max_level {
-            self.level = new_level;
-            self.capacity = Self::get_capacity_for_level_with_config(new_level, config)?;
-            Ok(true)
-        } else {
-            Ok(false)
         }
     }
 }

@@ -224,23 +224,62 @@ export class TestScenarioFactory {
   }
 
   /**
-   * Buy seed pack for user with Switchboard VRF
+   * Buy seed pack for user with Switchboard VRF integration
    */
   async buySeedPack(user: TestUser, quantity: number = 1): Promise<string> {
+    // Generate seed pack PDA with current counter
+    const config = await this.testEnv.program.account.config.fetch(this.testEnv.pdas.configPda);
+    const [seedPackPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("seed_pack"),
+        user.keypair.publicKey.toBuffer(),
+        config.seedPackCounter.toBuffer('le', 8)
+      ],
+      this.testEnv.program.programId
+    );
+
+    // Create mock VRF account for testing (in production this would be a real Switchboard VRF account)
+    const mockVrfAccount = anchor.web3.Keypair.generate();
+    
+    // Airdrop to mock VRF account
+    await this.testEnv.connection.requestAirdrop(mockVrfAccount.publicKey, 1000000000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Create mock VRF permission account
+    const mockVrfPermission = anchor.web3.Keypair.generate();
+    
+    // Real Switchboard program ID (Devnet/Mainnet)
+    const switchboardProgramId = new anchor.web3.PublicKey("SW1TCH7qEPTdLsDHRgPuMQjbQxKdH2aBStViMFnt64f");
+
     return await this.testEnv.program.methods
-      .purchaseSeedPack(quantity, new anchor.BN(Date.now()), new anchor.BN(1000000)) // max VRF fee
+      .purchaseSeedPack(
+        quantity, 
+        new anchor.BN(Date.now()), // user entropy seed
+        new anchor.BN(10000000) // max VRF fee (10M lamports = ~0.01 SOL)
+      )
       .accountsPartial({
         userState: user.userStatePda,
+        farmSpace: user.farmSpacePda, // Optional for auto-upgrade
         config: this.testEnv.pdas.configPda,
-        seedPack: user.seedPackPda,
+        seedPack: seedPackPda,
         rewardMint: this.testEnv.pdas.rewardMintPda,
         userTokenAccount: user.tokenAccount,
+        vrfAccount: mockVrfAccount.publicKey,
+        vrfPermission: mockVrfPermission.publicKey,
+        switchboardProgram: switchboardProgramId,
         user: user.keypair.publicKey,
         tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
       .signers([user.keypair])
       .rpc();
+  }
+
+  /**
+   * Legacy method for backward compatibility (renamed from buyMysteryPack)
+   */
+  async buyMysteryPack(user: TestUser, quantity: number = 1): Promise<string> {
+    return this.buySeedPack(user, quantity);
   }
 }
 

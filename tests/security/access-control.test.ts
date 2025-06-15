@@ -70,12 +70,10 @@ describe("Security: Access Control", () => {
           .accountsPartial({
             rewardMint: fakeRewardMint,
             mintAuthority: fakeMintAuthority,
-            metadataAccount: Keypair.generate().publicKey,
             admin: attacker.publicKey,
             tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
             systemProgram: anchor.web3.SystemProgram.programId,
             rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-            tokenMetadataProgram: new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"),
           })
           .signers([attacker])
           .rpc();

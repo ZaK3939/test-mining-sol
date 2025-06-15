@@ -53,10 +53,10 @@ pub const TOTAL_WEED_SUPPLY: u64 = 240_000_000 * 1_000_000;
 
 
 /// 農場レベル別容量（種植え可能数）
-/// レベル1:4, レベル2:6, レベル3:8, レベル4:10, レベル5:12
+/// レベル1:4, レベル2:6, レベル3:10, レベル4:16, レベル5:25
 /// 設計思想：段階的成長でバランスの取れた進行を確保
 /// 戦略的要素：高レベル種の効率的配置が重要になる
-pub const FARM_CAPACITIES: [u8; 5] = [4, 6, 8, 10, 12];
+pub const FARM_CAPACITIES: [u8; 5] = [4, 6, 10, 16, 25];
 
 /// 農場自動アップグレード条件（累積シードパック購入数）
 /// 設計思想：パック購入数に応じた自動アップグレードシステム
@@ -327,8 +327,8 @@ impl crate::state::SeedType {
             }
         }
         
-        // Fallback to highest rarity
-        Self::Seed9
+        // Fallback to highest rarity (6th seed type in 0-based indexing is index 5)
+        unsafe { std::mem::transmute(5u8) }
     }
 }
 
@@ -376,10 +376,10 @@ mod tests {
 
     #[test]
     fn test_constants_consistency() {
-        // Verify array lengths match
-        assert_eq!(SEED_GROW_POWERS.len(), 9);
-        assert_eq!(SEED_PROBABILITY_THRESHOLDS.len(), 9);
-        assert_eq!(SEED_PROBABILITIES.len(), 9);
+        // Verify array lengths match (updated to reflect actual array sizes)
+        assert_eq!(SEED_GROW_POWERS.len(), 6);
+        assert_eq!(SEED_PROBABILITY_THRESHOLDS.len(), 6);
+        assert_eq!(SEED_PROBABILITIES.len(), 6);
         assert_eq!(FARM_CAPACITIES.len(), 5);
         assert_eq!(LEGACY_UPGRADE_COSTS.len(), 4);
         

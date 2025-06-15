@@ -110,7 +110,7 @@ pub fn validate_seed_pack_not_opened(seed_pack: &SeedPack) -> Result<()> {
 /// Validate seed pack ownership
 pub fn validate_seed_pack_ownership(seed_pack: &SeedPack, expected_owner: Pubkey) -> Result<()> {
     require!(
-        seed_pack.purchaser == expected_owner,
+        seed_pack.owner == expected_owner,
         GameError::NotSeedOwner
     );
     Ok(())
@@ -150,7 +150,7 @@ pub fn validate_invite_code_format(code: &[u8; 8]) -> Result<()> {
 /// Validate invite limit not exceeded (for hash-based system)
 pub fn validate_secret_invite_limit(secret_invite_code: &InviteCode) -> Result<()> {
     require!(
-        secret_invite_code.invites_used < secret_invite_code.invite_limit,
+        secret_invite_code.uses < secret_invite_code.invite_limit,
         GameError::InviteCodeLimitReached
     );
     Ok(())
@@ -246,14 +246,15 @@ mod tests {
         let farm_space_key = Pubkey::new_unique();
         
         let unplanted_seed = Seed {
-            owner,
+            seed_id: 1,
             seed_type: SeedType::Seed1,
+            owner,
             grow_power: 100,
+            planted_at: 0,
             is_planted: false,
             planted_farm_space: None,
             created_at: 1000000,
-            seed_id: 1,
-            reserve: [0; 32],
+            reserve: [0; 16],
         };
         
         let planted_seed = Seed {
@@ -287,16 +288,21 @@ mod tests {
         let other = Pubkey::new_unique();
         
         let unopened_pack = SeedPack {
-            purchaser: owner,
-            purchased_at: 1000000,
-            cost_paid: 300_000_000,
-            vrf_fee_paid: 2_077_400, // Realistic VRF fee
-            is_opened: false,
-            vrf_sequence: 1,
-            user_entropy_seed: 12345,
-            final_random_value: 0,
             pack_id: 1,
-            vrf_account: Pubkey::new_unique(),
+            owner,
+            quantity: 1,
+            is_opened: false,
+            table_version: 1,
+            vrf_request: Some(Pubkey::new_unique()),
+            random_seed: Some(12345),
+            purchased_at: 1000000,
+            opened_at: None,
+            cost_paid: 300_000_000,
+            vrf_fee_paid: 2_077_400,
+            vrf_sequence: Some(1),
+            user_entropy_seed: Some(12345),
+            final_random_value: Some(0),
+            vrf_account: Some(Pubkey::new_unique()),
             reserve: [0; 8],
         };
         
@@ -349,14 +355,15 @@ mod tests {
         };
         
         let seed = Seed {
-            owner,
+            seed_id: 1,
             seed_type: SeedType::Seed1,
+            owner,
             grow_power: 100,
+            planted_at: 0,
             is_planted: false,
             planted_farm_space: None,
             created_at: 1000000,
-            seed_id: 1,
-            reserve: [0; 32],
+            reserve: [0; 16],
         };
         
         // Note: Upgrade validation tests removed - now using auto-upgrade system

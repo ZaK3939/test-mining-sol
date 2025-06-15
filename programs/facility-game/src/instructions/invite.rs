@@ -58,7 +58,7 @@ pub struct UseInviteCode<'info> {
         ],
         bump,
         constraint = invite_account.is_active @ GameError::InviteCodeInactive,
-        constraint = invite_account.invites_used < invite_account.invite_limit @ GameError::InviteCodeLimitReached
+        constraint = invite_account.uses < invite_account.max_uses @ GameError::InviteCodeLimitReached
     )]
     pub invite_account: Account<'info, InviteCode>,
     
@@ -126,12 +126,14 @@ pub fn create_invite_code(
     );
     
     // Set secret invite account data
+    invite.code = invite_code;
     invite.inviter = ctx.accounts.inviter.key();
     invite.code_hash = code_hash;
     invite.salt = salt;
-    invite.invites_used = 0;
-    invite.invite_limit = invite_limit;
-    invite.code_index = 0; // Not used in simplified version
+    invite.uses = 0;
+    invite.max_uses = invite_limit as u32;
+    invite.invite_limit = invite_limit as u32;
+    // code_index field removed - not needed in simplified version
     invite.created_at = Clock::get()?.unix_timestamp;
     invite.is_active = true;
     invite.created_as_operator = created_as_operator;
@@ -183,7 +185,7 @@ pub fn use_invite_code(
     user_state.reserve = [0; 28];
     
     // Update usage count
-    invite.invites_used += 1;
+    invite.uses += 1;
     
     msg!("Secret invite code used: User={}, Inviter={}", 
          ctx.accounts.invitee.key(),

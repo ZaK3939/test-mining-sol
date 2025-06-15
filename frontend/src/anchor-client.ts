@@ -246,16 +246,6 @@ export class AnchorClient {
       const userPublicKey = this.provider.wallet.publicKey;
       const pdas = await this.calculatePDAs(userPublicKey);
 
-      // Create the correct metadata account PDA as required by Token Metadata Program
-      const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
-        'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'
-      );
-      const [metadataAccount] = PublicKey.findProgramAddressSync(
-        [Buffer.from('metadata'), TOKEN_METADATA_PROGRAM_ID.toBuffer(), pdas.rewardMint.toBuffer()],
-        TOKEN_METADATA_PROGRAM_ID
-      );
-
-      logger.info(`Metadata account: ${metadataAccount.toString()}`);
       logger.info(`Reward mint: ${pdas.rewardMint.toString()}`);
 
       const tx = await this.program.methods
@@ -265,12 +255,10 @@ export class AnchorClient {
           mintAuthority: pdas.mintAuthority,
           transferFeeConfigAuthority: pdas.mintAuthority,
           withdrawWithheldAuthority: userPublicKey,
-          metadataAccount: metadataAccount,
           admin: userPublicKey,
           tokenProgram: new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'),
           systemProgram: SystemProgram.programId,
           rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
-          tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
         })
         .rpc();
 
@@ -1335,34 +1323,156 @@ export class AnchorClient {
         throw new Error('Seed pack cost cannot exceed 10,000 WEED');
       }
 
-      const configPDA = this.pdas.config;
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
 
       const tx = await this.program.methods
         .updateSeedPackCost(new BN(newSeedPackCost))
         .accounts({
-          config: configPDA,
-          admin: this.provider.publicKey,
+          config: pdas.config,
+          admin: userPublicKey,
         })
         .rpc();
 
-      logger.info('Seed pack cost updated successfully', { 
+      logger.success('Seed pack cost updated successfully', { 
         transaction: tx,
         newCostWeed: newSeedPackCost / 1_000_000
       });
 
-      return {
-        success: true,
-        transaction: tx,
-        message: `Seed pack cost updated to ${newSeedPackCost / 1_000_000} WEED`,
-      };
+      return tx;
 
     } catch (error) {
-      logger.error('Failed to update seed pack cost:', error);
-      return {
-        success: false,
-        error: this.handleProgramError(error),
-        message: 'Failed to update seed pack cost',
-      };
+      const programError = this.handleProgramError(error);
+      logger.error('Failed to update seed pack cost:', programError.message);
+      throw programError;
+    }
+  }
+
+  /**
+   * Reveal a new seed type (admin only)
+   * Makes a previously hidden seed type visible to users with its values
+   * 
+   * @param seedIndex - Index of the seed type to reveal (0-15)
+   * @param growPower - Grow power value for this seed type
+   * @param probabilityPercentage - Probability percentage (0.0-100.0)
+   * @returns Transaction result
+   * 
+   * @example
+   * // Reveal Seed9 (index 8) with 60000 grow power and 1.5% probability
+   * await client.revealSeed(8, 60000, 1.5);
+   */
+  async revealSeed(seedIndex: number, growPower: number, probabilityPercentage: number): Promise<TransactionResult> {
+    try {
+      logger.info('Revealing seed type', { seedIndex, growPower, probabilityPercentage });
+      
+      // Validation
+      if (seedIndex < 0 || seedIndex >= 16) {
+        throw new Error('Seed index must be between 0 and 15');
+      }
+      
+      if (growPower <= 0) {
+        throw new Error('Grow power must be greater than 0');
+      }
+      
+      if (probabilityPercentage < 0 || probabilityPercentage > 100) {
+        throw new Error('Probability percentage must be between 0 and 100');
+      }
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Calculate probability table PDA
+      const [probabilityTablePDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('probability_table')],
+        this.program.programId
+      );
+
+      const tx = await this.program.methods
+        .revealSeed(seedIndex, new BN(growPower), probabilityPercentage)
+        .accounts({
+          probabilityTable: probabilityTablePDA,
+          config: pdas.config,
+          admin: userPublicKey,
+        })
+        .rpc();
+
+      logger.success('Seed type revealed successfully', { 
+        transaction: tx,
+        seedType: `Seed${seedIndex + 1}`,
+        growPower,
+        probabilityPercentage
+      });
+
+      return tx;
+
+    } catch (error) {
+      const programError = this.handleProgramError(error);
+      logger.error('Failed to reveal seed type:', programError.message);
+      throw programError;
+    }
+  }
+
+  /**
+   * Update values for an already revealed seed type (admin only)
+   * Allows changing grow power and probability for existing revealed seeds
+   * 
+   * @param seedIndex - Index of the seed type to update (0-15)
+   * @param growPower - New grow power value for this seed type
+   * @param probabilityPercentage - New probability percentage (0.0-100.0)
+   * @returns Transaction result
+   * 
+   * @example
+   * // Update Seed1 (index 0) to have 150 grow power and 30% probability
+   * await client.updateSeedValues(0, 150, 30.0);
+   */
+  async updateSeedValues(seedIndex: number, growPower: number, probabilityPercentage: number): Promise<TransactionResult> {
+    try {
+      logger.info('Updating seed values', { seedIndex, growPower, probabilityPercentage });
+      
+      // Validation
+      if (seedIndex < 0 || seedIndex >= 16) {
+        throw new Error('Seed index must be between 0 and 15');
+      }
+      
+      if (growPower <= 0) {
+        throw new Error('Grow power must be greater than 0');
+      }
+      
+      if (probabilityPercentage < 0 || probabilityPercentage > 100) {
+        throw new Error('Probability percentage must be between 0 and 100');
+      }
+
+      const userPublicKey = this.provider.wallet.publicKey;
+      const pdas = await this.calculatePDAs(userPublicKey);
+
+      // Calculate probability table PDA
+      const [probabilityTablePDA] = await PublicKey.findProgramAddress(
+        [Buffer.from('probability_table')],
+        this.program.programId
+      );
+
+      const tx = await this.program.methods
+        .updateSeedValues(seedIndex, new BN(growPower), probabilityPercentage)
+        .accounts({
+          probabilityTable: probabilityTablePDA,
+          config: pdas.config,
+          admin: userPublicKey,
+        })
+        .rpc();
+
+      logger.success('Seed values updated successfully', { 
+        transaction: tx,
+        seedType: `Seed${seedIndex + 1}`,
+        growPower,
+        probabilityPercentage
+      });
+
+      return tx;
+
+    } catch (error) {
+      const programError = this.handleProgramError(error);
+      logger.error('Failed to update seed values:', programError.message);
+      throw programError;
     }
   }
 }

@@ -10,8 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-// Metaplex Token Metadata Program ID
-const TOKEN_METADATA_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
+// Removed mpl-token-metadata dependency
 
 // 設定
 const PROGRAM_ID = new PublicKey('EDzDNN1v64dKgbmHc917kBiDThMV8ZrC7cLDDyGTyu89');
@@ -157,23 +156,15 @@ async function initialize() {
     if (!mintExists) {
       logger.info('🪙 Reward Mint を作成中...');
 
-      // Derive metadata account PDA
-      const [metadataAccount] = PublicKey.findProgramAddressSync(
-        [Buffer.from('metadata'), TOKEN_METADATA_ID.toBuffer(), pdas.rewardMint.toBuffer()],
-        TOKEN_METADATA_ID
-      );
-
       const tx2 = await program.methods
         .createRewardMint()
         .accounts({
           rewardMint: pdas.rewardMint,
           mintAuthority: pdas.mintAuthority,
-          metadataAccount: metadataAccount,
           admin: wallet.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
-          tokenMetadataProgram: TOKEN_METADATA_ID,
         })
         .rpc();
 

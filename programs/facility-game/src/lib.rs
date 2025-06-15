@@ -130,6 +130,58 @@ pub mod farm_game {
         instructions::admin::update_seed_pack_cost(ctx, new_seed_pack_cost)
     }
     
+    /// Reveal a new seed type (admin only)
+    /// Makes a previously hidden seed type visible to users with its values
+    /// 
+    /// # Parameters
+    /// * `seed_index` - Index of the seed type to reveal (0-15)
+    /// * `grow_power` - Grow power value for this seed type
+    /// * `probability_percentage` - Probability percentage (0.0-100.0)
+    /// 
+    /// # Example
+    /// - seed_index: 8 (for Seed9, the first secret seed)
+    /// - grow_power: 60000
+    /// - probability_percentage: 1.5
+    /// 
+    /// # Security
+    /// - Admin signature required
+    /// - Seed must not already be revealed
+    /// - Values must be within reasonable ranges
+    pub fn reveal_seed(
+        ctx: Context<RevealSeed>,
+        seed_index: u8,
+        grow_power: u64,
+        probability_percentage: f32,
+    ) -> Result<()> {
+        instructions::admin::reveal_seed(ctx, seed_index, grow_power, probability_percentage)
+    }
+    
+    /// Update values for an already revealed seed type (admin only)
+    /// Allows changing grow power and probability for existing revealed seeds
+    /// 
+    /// # Parameters
+    /// * `seed_index` - Index of the seed type to update (0-15)
+    /// * `grow_power` - New grow power value for this seed type
+    /// * `probability_percentage` - New probability percentage (0.0-100.0)
+    /// 
+    /// # Example
+    /// - seed_index: 0 (for Seed1)
+    /// - grow_power: 150 (increased from 100)
+    /// - probability_percentage: 30.0 (same as before)
+    /// 
+    /// # Security
+    /// - Admin signature required
+    /// - Seed must already be revealed
+    /// - Values must be within reasonable ranges
+    pub fn update_seed_values(
+        ctx: Context<UpdateSeedValues>,
+        seed_index: u8,
+        grow_power: u64,
+        probability_percentage: f32,
+    ) -> Result<()> {
+        instructions::admin::update_seed_values(ctx, seed_index, grow_power, probability_percentage)
+    }
+    
     /// Initialize probability table with default Table 1 settings
     /// Creates the dynamic probability table for seed generation
     /// 
@@ -200,10 +252,14 @@ pub mod farm_game {
     // ===== USER MANAGEMENT INSTRUCTIONS =====
 
     /// ユーザーアカウントの初期化
-    /// ゲームへの参加に必要な基本データ構造を作成
+    /// 運営専用：招待コード抜きでユーザーアカウントを初期化
+    /// 通常のユーザーは招待コード経由でのみゲームに参加可能
+    /// 
+    /// # Admin/Operator Only Access
+    /// この機能は config.admin または config.operator のみが実行可能
     /// 
     /// # Parameters
-    /// * `referrer` - 紹介者のpubkey（招待コード使用時のみ）
+    /// * `referrer` - 紹介者のpubkey（オプション）
     /// 
     /// # 作成されるデータ
     /// - UserState PDA: ユーザーの進行状況

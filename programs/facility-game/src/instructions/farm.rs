@@ -109,7 +109,7 @@ pub fn buy_farm_space(ctx: Context<BuyFarmSpace>) -> Result<()> {
     initial_seed.planted_farm_space = Some(farm_space.key());
     initial_seed.created_at = Clock::get()?.unix_timestamp;
     initial_seed.seed_id = 0; // Special ID for initial gift
-    initial_seed.reserve = [0; 32];
+    initial_seed.reserve = [0; 16];
 
     // Update seed counter (start from 1 for next seeds)
     config.seed_counter = 1;
@@ -219,15 +219,22 @@ pub fn initialize_farm_level_config(ctx: Context<InitializeFarmLevelConfig>) -> 
     
     // Initialize with current 5-level system
     config.max_level = 5;
-    config.capacities = vec![4, 6, 8, 10, 12];
-    config.upgrade_thresholds = vec![0, 30, 100, 300, 500];
-    config.level_names = vec![
-        "Starter Farm".to_string(),
-        "Growing Farm".to_string(),
-        "Expanding Farm".to_string(),
-        "Advanced Farm".to_string(),
-        "Master Farm".to_string(),
-    ];
+    
+    // Initialize arrays with zeros then set values
+    config.capacities = [0; 20];
+    config.capacities[0..5].copy_from_slice(&[4, 6, 8, 10, 12]);
+    
+    config.upgrade_thresholds = [0; 20];
+    config.upgrade_thresholds[0..5].copy_from_slice(&[0, 30, 100, 300, 500]);
+    
+    // Initialize level names
+    config.level_names = [[0; 32]; 20];
+    let names = ["Starter Farm", "Growing Farm", "Expanding Farm", "Advanced Farm", "Master Farm"];
+    for (i, name) in names.iter().enumerate() {
+        let name_bytes = name.as_bytes();
+        let copy_len = name_bytes.len().min(32);
+        config.level_names[i][0..copy_len].copy_from_slice(&name_bytes[0..copy_len]);
+    }
     config.created_at = Clock::get()?.unix_timestamp;
     config.updated_at = Clock::get()?.unix_timestamp;
     config.reserve = [0; 32];
@@ -271,11 +278,21 @@ pub fn update_farm_level_config(
     
     // Update configuration
     config.max_level = max_level;
-    config.capacities = capacities;
-    config.upgrade_thresholds = upgrade_thresholds;
+    
+    // Initialize arrays with zeros then copy values
+    config.capacities = [0; 20];
+    config.capacities[0..capacities.len()].copy_from_slice(&capacities);
+    
+    config.upgrade_thresholds = [0; 20];
+    config.upgrade_thresholds[0..upgrade_thresholds.len()].copy_from_slice(&upgrade_thresholds);
     
     if let Some(names) = level_names {
-        config.level_names = names;
+        config.level_names = [[0; 32]; 20];
+        for (i, name) in names.iter().enumerate().take(20) {
+            let name_bytes = name.as_bytes();
+            let copy_len = name_bytes.len().min(32);
+            config.level_names[i][0..copy_len].copy_from_slice(&name_bytes[0..copy_len]);
+        }
     }
     
     config.updated_at = Clock::get()?.unix_timestamp;
@@ -298,7 +315,9 @@ pub fn migrate_farm_to_new_levels(ctx: Context<MigrateFarmToNewLevels>) -> Resul
     }
     
     // Recalculate capacity based on new configuration
-    farm.capacity = FarmSpace::get_capacity_for_level_with_config(farm.level, level_config)?;
+    if farm.level > 0 && (farm.level as usize) <= level_config.capacities.len() {
+        farm.capacity = level_config.capacities[(farm.level - 1) as usize];
+    }
     
     // If capacity decreased and farm has more seeds than new capacity, need to handle overflow
     if farm.capacity < old_capacity && farm.seed_count > farm.capacity {
@@ -339,9 +358,8 @@ pub fn get_farm_level_info(
         
         let capacity = config.capacities[(l - 1) as usize];
         let threshold = config.upgrade_thresholds[(l - 1) as usize];
-        let name = config.level_names.get((l - 1) as usize)
-            .map(|s| s.clone())
-            .unwrap_or_else(|| format!("Level {}", l));
+        let name_bytes = &config.level_names[(l - 1) as usize];
+        let name = std::str::from_utf8(name_bytes).unwrap_or("Unknown").trim_end_matches('\0').to_string();
         
         Ok(FarmLevelInfo {
             level: l,

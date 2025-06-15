@@ -244,9 +244,10 @@ pub fn update_global_grow_power(
 pub fn initialize_seed_storage(seed_storage: &mut SeedStorage, owner: Pubkey) {
     seed_storage.owner = owner;
     seed_storage.seed_ids = Vec::new();
+    seed_storage.seed_types = Vec::new(); // Initialize parallel type vector
     seed_storage.total_seeds = 0;
-    seed_storage.seed_type_counts = [0; 9];
-    seed_storage.reserve = [0; 16];
+    seed_storage.seed_type_counts = [0; 16];
+    seed_storage.reserve = [0; 8];
 }
 
 
@@ -268,7 +269,7 @@ pub fn add_seed_to_storage(
     Ok(())
 }
 
-/// Legacy add seed function for backward compatibility
+/// Legacy add seed function for backward compatibility (with default Seed1 type)
 pub fn add_seed_to_storage_legacy(
     seed_storage: &mut SeedStorage,
     seed_id: u64,
@@ -278,8 +279,18 @@ pub fn add_seed_to_storage_legacy(
         GameError::StorageFull
     );
     
+    // Use default Seed1 type for legacy compatibility
+    let default_seed_type = SeedType::Seed1;
     seed_storage.seed_ids.push(seed_id);
+    seed_storage.seed_types.push(default_seed_type);
     seed_storage.total_seeds += 1;
+    
+    // Update type count
+    let type_index = default_seed_type as usize;
+    if type_index < 16 {
+        seed_storage.seed_type_counts[type_index] += 1;
+    }
+    
     Ok(())
 }
 
